@@ -1,0 +1,3 @@
+export default function Page ({params}: {params: {id: string}}) {
+    return <div className="relative h-full">Chat Page: Lorem ipsum dolor sit amet consectetur adipisicing elit. Veniam perferendis quas minus quam accusantium rem maiores quibusdam iure expedita libero, consectetur, odit porro assumenda, nihil laudantium molestiae voluptatem. Culpa at earum ducimus quasi aperiam eaque, et dolorem rerum? Enim cum architecto repellat sequi quas voluptas a esse id facere facilis! Lorem ipsum dolor sit amet, consectetur adipisicing elit. Dignissimos officia illo ab blanditiis commodi at porro dolor voluptatum pariatur assumenda? {params.id}</div>
+}
