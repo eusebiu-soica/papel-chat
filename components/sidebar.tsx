@@ -32,7 +32,7 @@ const dummyChats = [
 
 export default function Sidebar() {
     return (
-        <Card className="relative rounded-none bg-transparent border-none max-w-[420px] w-full p-[8px] gap-2">
+        <Card className="relative rounded-none bg-transparent border-none max-w-[420px] w-full p-[8px] gap-0">
             <CardHeader className="px-0">
                 <SidebarHeader />
             </CardHeader>

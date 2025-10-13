@@ -9,7 +9,7 @@ export default function SidebarHeader() {
                <AccountMenu />
                 <ItemTitle className="text-xl">Papel Chat</ItemTitle>
             </ItemContent>
-            <ItemActions >
+            <ItemActions className="w-full">
                 <SearchForm />
             </ItemActions>
         </Item>

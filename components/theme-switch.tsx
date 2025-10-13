@@ -20,7 +20,7 @@ export function ModeToggle() {
   return (
     <Item variant='default' className="p-0 w-full">
       <ItemMedia variant="default" className="p-0">
-        <MoonStar />
+        <MoonStar className="text-foreground"/>
       </ItemMedia>
       <ItemContent onClick={() => setTheme("dark")}>
         <ItemTitle>Night mode</ItemTitle>

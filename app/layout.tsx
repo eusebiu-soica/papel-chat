@@ -5,10 +5,11 @@ import { ThemeProvider } from "@/components/theme-provider";
 import Sidebar from "@/components/sidebar";
 import SectionTitle from "@/components/sidebar-header"
 import {
-    Card,
-    CardContent,
-    CardHeader,
+  Card,
+  CardContent,
+  CardHeader,
 } from "@/components/ui/card"
+import ChatTitle from "@/components/chat-header";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -43,14 +44,14 @@ export default function RootLayout({
         >
           <div className="font-sans flex flex-row min-h-screen">
             <Sidebar />
-            <Card className="w-full p-3 rounded-none border-none">
-           <CardHeader className="px-0">
-                <SectionTitle />
-            </CardHeader>
-            <CardContent className={"space-y-2 max-h-[70vh] w-full overflow-y-auto px-0"}>
+            <Card className="w-full p-3 px-8 rounded-none border-none">
+              <CardHeader className="px-0">
+                <ChatTitle />
+              </CardHeader>
+              <CardContent className={"space-y-2 max-h-[70vh] w-full overflow-y-auto px-0"}>
                 {children}
-            </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
             {/* {children} */}
           </div>
         </ThemeProvider>

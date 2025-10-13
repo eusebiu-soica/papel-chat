@@ -1,19 +1,12 @@
 import {
     DropdownMenu,
     DropdownMenuContent,
-    DropdownMenuGroup,
     DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuPortal,
     DropdownMenuSeparator,
-    DropdownMenuShortcut,
-    DropdownMenuSub,
-    DropdownMenuSubContent,
-    DropdownMenuSubTrigger,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Button } from "./ui/button"
-import { Ban, BellOff, DeleteIcon, EllipsisVertical, LogOut, Menu, Settings, Trash } from "lucide-react"
+import { LogOut, Menu, Settings } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar"
 import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "./ui/item"
 import { ModeToggle } from "./theme-switch"
@@ -27,7 +20,7 @@ export default function AccountMenu() {
             </DropdownMenuTrigger>
             <DropdownMenuContent className="shadow-lg" align="start">
 
-                <DropdownMenuItem className="cursor-pointer">
+                <DropdownMenuItem className="cursor-pointer data-[highlighted]:bg-muted/50">
                     <Item className="p-0 gap-2">
                         <ItemMedia>
                             <Avatar>
@@ -41,16 +34,16 @@ export default function AccountMenu() {
                         </ItemContent>
                     </Item>
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
+                {/* <DropdownMenuSeparator /> */}
 
-                <DropdownMenuItem className="gap-4 p-2 font-medium">
-                    <Settings /> Settings
+                <DropdownMenuItem className="gap-4 p-2 font-medium data-[highlighted]:bg-muted/50 cursor-pointer">
+                    <Settings className="text-foreground"/> Settings
                 </DropdownMenuItem>
-                <DropdownMenuItem className="gap-4 p-2 font-medium">
+                <DropdownMenuItem className="gap-4 p-2 font-medium data-[highlighted]:bg-muted/50 cursor-pointer">
                     <ModeToggle />
                 </DropdownMenuItem>
-                <DropdownMenuItem className="gap-4 p-2 font-medium">
-                    <LogOut /> Log out
+                <DropdownMenuItem className="gap-4 p-2 font-medium data-[highlighted]:bg-muted/50 cursor-pointer">
+                    <LogOut className="text-foreground" /> Log out
                 </DropdownMenuItem>
                 <DropdownMenuItem disabled className="gap-4 p-2 text-center justify-center">
                     Papel Chat v1.2.34

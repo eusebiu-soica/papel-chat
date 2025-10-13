@@ -9,7 +9,7 @@ export default function ChatAvatar({ imageUrl, name }: ChatAvatarProps) {
     const initials = name ? name.charAt(0).toUpperCase() : "U"; // U for Unknown
 
     return (
-        <Avatar>
+        <Avatar className="size-10">
             {imageUrl ? (
                 <AvatarImage src={imageUrl} alt={name || "Chat Avatar"} />
             ) : (
