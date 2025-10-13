@@ -4,12 +4,12 @@ import SearchForm from "./search-form";
 
 export default function SidebarHeader() {
     return (
-        <Item variant="default" className="p-1 flex align-center justify-between">
-            <ItemContent className="flex flex-row align-center gap-2">
+        <Item variant="default" className="p-1 flex gap-2 w-full justify-start items-start">
+            <ItemContent className="flex flex-row align-center">
                <AccountMenu />
                 <ItemTitle className="text-xl">Papel Chat</ItemTitle>
             </ItemContent>
-            <ItemActions>
+            <ItemActions >
                 <SearchForm />
             </ItemActions>
         </Item>

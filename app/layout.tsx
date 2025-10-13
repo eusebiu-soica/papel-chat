@@ -3,6 +3,12 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import Sidebar from "@/components/sidebar";
+import SectionTitle from "@/components/sidebar-header"
+import {
+    Card,
+    CardContent,
+    CardHeader,
+} from "@/components/ui/card"
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -37,7 +43,15 @@ export default function RootLayout({
         >
           <div className="font-sans flex flex-row min-h-screen">
             <Sidebar />
-            {children}
+            <Card className="w-full p-3 rounded-none border-none">
+           <CardHeader className="px-0">
+                <SectionTitle />
+            </CardHeader>
+            <CardContent className={"space-y-2 max-h-[70vh] w-full overflow-y-auto px-0"}>
+                {children}
+            </CardContent>
+        </Card>
+            {/* {children} */}
           </div>
         </ThemeProvider>
       </body>
