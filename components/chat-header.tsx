@@ -12,7 +12,7 @@ import { MoreVertical, VolumeX, Trash2, Ban, Archive, Trash } from "lucide-react
 import ChatMenu from "./chat-menu";
 import SearchForm from "./search-form";
 
-export default function ChatHeader() {
+export default function ChatHeader({title}: {title: string}) {
     return (
         <div>
             <Item className="p-0">
@@ -20,7 +20,7 @@ export default function ChatHeader() {
                     <ChatAvatar name='Evil Rabbit' />
                 </ItemMedia>
                 <ItemContent>
-                    <ItemTitle className="text-lg font-medium">Evil Rabbit</ItemTitle>
+                    <ItemTitle className="text-lg font-medium">{title}</ItemTitle>
                 </ItemContent>
                 <ItemActions className="flex-1">
                     <SearchForm className="w-full" />

@@ -62,7 +62,7 @@ function ItemTrigger() {
           <ItemDescription>Last seen 5 months ago</ItemDescription>
         </ItemContent>
         <ItemActions>
-          <Badge variant="default">3</Badge>
+          <Badge variant="default" >3</Badge>
         </ItemActions>
       </Link>
     </Item>
