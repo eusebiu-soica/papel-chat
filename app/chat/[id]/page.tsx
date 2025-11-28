@@ -1,6 +1,4 @@
-"use client"
-
-import { ChatRoom } from "@/components/chat-room"
+import ChatRoomClient from "@/components/chat-room-client"
 
 // This would typically come from your database or API
 const MOCK_MESSAGES = [
@@ -33,12 +31,11 @@ export default function Page({ params }: { params: { id: string } }) {
   }
 
   return (
-    <ChatRoom
+    <ChatRoomClient
       id={params.id}
       title="Chat with John Doe"
       messages={MOCK_MESSAGES}
       currentUserId="current-user"
-      onSendMessage={handleSendMessage}
     />
   )
 }

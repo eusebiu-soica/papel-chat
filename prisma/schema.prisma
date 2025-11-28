@@ -19,13 +19,13 @@ model User {
   updatedAt DateTime @updatedAt
 
   // Relations
-  sentMessages      Message[]     @relation("SentMessages")
-  receivedMessages  Message[]     @relation("ReceivedMessages")
-  chats             Chat[]
-  groupMemberships  GroupMember[]
-  rooms             Room[]
-  blockedUsers      BlockedUser[] @relation("BlockedBy")
-  blockedByUsers    BlockedUser[] @relation("Blocks")
+  sentMessages     Message[]     @relation("SentMessages")
+  chatsAsUser1     Chat[]        @relation("ChatUser1")
+  chatsAsUser2     Chat[]        @relation("ChatUser2")
+  groupMemberships GroupMember[]
+  rooms            Room[]
+  blockedUsers     BlockedUser[] @relation("BlockedBy")
+  blockedByUsers   BlockedUser[] @relation("Blocks")
 
   @@map("users")
 }
@@ -34,8 +34,8 @@ model Chat {
   id        String   @id @default(uuid())
   userId1   String
   userId2   String
-  user1     User     @relation(fields: [userId1], references: [id], onDelete: Cascade)
-  user2     User     @relation(fields: [userId2], references: [id], onDelete: Cascade)
+  user1     User     @relation("ChatUser1", fields: [userId1], references: [id], onDelete: Cascade)
+  user2     User     @relation("ChatUser2", fields: [userId2], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -77,12 +77,12 @@ model Group {
 }
 
 model GroupMember {
-  id        String   @id @default(cuid())
-  groupId   String
-  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  joinedAt  DateTime @default(now())
+  id       String   @id @default(cuid())
+  groupId  String
+  group    Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt DateTime @default(now())
 
   @@unique([groupId, userId])
   @@map("group_members")

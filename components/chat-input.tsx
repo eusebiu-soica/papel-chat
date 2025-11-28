@@ -40,7 +40,7 @@ export function ChatInput({ onSendMessage, className, placeholder = "Type a mess
   }
 
   return (
-    <div className={cn("mx-auto flex w-full max-w-[820px] flex-col gap-3 bg-transparent p-4 sticky bottom-0", className)}>
+    <div className={cn("flex w-full flex-col gap-3 bg-transparent p-4 sticky bottom-0", className)}>
       <div className="flex w-full items-end gap-3 rounded-2xl bg-zinc-900/60 px-3 py-3 shadow-inner">
         {/* Action Buttons */}
         <div className="flex items-center gap-2">

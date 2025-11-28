@@ -22,10 +22,10 @@ export function ChatRoom({
   onSendMessage,
 }: ChatRoomProps) {
   return (
-    <div className="flex h-screen w-full flex-col">
+    <div className="flex flex-1 min-h-0 w-full flex-col">
       <ChatHeader title={title} imageUrl={imageUrl} />
 
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden">
         <ChatMessages
           messages={messages}
           currentUserId={currentUserId}

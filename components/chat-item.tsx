@@ -1,10 +1,12 @@
+"use client"
+
 import type React from "react"
 import { BellOff, CheckCheck, Pin, Trash } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item"
 import { Badge } from "./ui/badge"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { ContextMenu, ContextMenuItem as MenuItem, ContextMenuSeparator } from "@radix-ui/react-context-menu"
 import {
   ContextMenuContent,
@@ -56,10 +58,17 @@ interface ChatItemProps {
   imageUrl?: string
 }
 
-function ItemTrigger({ id, name, imageUrl, message, isActive }: ChatItemProps & { isActive: boolean }) {
+function ItemTrigger({ id, name, imageUrl, message, unreadCount, isActive }: ChatItemProps & { isActive: boolean }) {
+  const router = useRouter()
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault()
+    router.push(`/chat/${id}`)
+  }
+
   return (
     <Item asChild variant="default" className={cn("p-3 hover:bg-muted/50 transition-colors", isActive && "bg-muted/70 border-l-2 border-indigo-500")}>
-      <Link href={`/chat/${id}`}>
+      <Link href={`/chat/${id}`} data-chat-id={id} onClick={handleClick}>
         <ItemMedia>
           <Avatar className="size-10">
             <AvatarImage src={imageUrl} />
@@ -87,7 +96,7 @@ export default function ChatItem({ id, name, message, unreadCount, imageUrl }: C
   return (
     <div className="flex w-full max-w-xl flex-col gap-0">
       <ContextMenu>
-        <ContextMenuTrigger>
+        <ContextMenuTrigger asChild>
           <ItemTrigger id={id} name={name} message={message} unreadCount={unreadCount} imageUrl={imageUrl} isActive={isActive} />
         </ContextMenuTrigger>
         <ContextMenuContent className="max-w-[300px] w-[200px] rounded-lg overflow-hidden">

@@ -6,35 +6,55 @@ export async function GET(request: NextRequest) {
     // Get all chats for a user
     const userId = request.nextUrl.searchParams.get("userId")
 
-    if (!userId) {
-      return NextResponse.json({ error: "userId is required" }, { status: 400 })
-    }
-
-    const chats = await prisma.chat.findMany({
-      where: {
-        OR: [{ userId1: userId }, { userId2: userId }],
-      },
-      include: {
-        user1: true,
-        user2: true,
-        messages: {
-          orderBy: { createdAt: "desc" },
-          take: 1,
+    let chats
+    if (userId) {
+      chats = await prisma.chat.findMany({
+        where: {
+          OR: [{ userId1: userId }, { userId2: userId }],
         },
-      },
-      orderBy: {
-        updatedAt: "desc",
-      },
-    })
+        include: {
+          user1: true,
+          user2: true,
+          messages: {
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          },
+        },
+        orderBy: {
+          updatedAt: "desc",
+        },
+      })
+    } else {
+      // If no userId provided, return all chats (useful for demo/dev)
+      chats = await prisma.chat.findMany({
+        include: {
+          user1: true,
+          user2: true,
+          messages: {
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          },
+        },
+        orderBy: {
+          updatedAt: "desc",
+        },
+      })
+    }
 
     // Map the response to include the other user's info
     const formattedChats = chats.map((chat: any) => {
-      const otherUser = chat.userId1 === userId ? chat.user2 : chat.user1
+      let otherUser
+      if (userId) {
+        otherUser = chat.userId1 === userId ? chat.user2 : chat.user1
+      } else {
+        // default to user2 when no userId is provided
+        otherUser = chat.user2 || chat.user1
+      }
       return {
         id: chat.id,
-        userId: otherUser.id,
-        name: otherUser.name,
-        avatar: otherUser.avatar,
+        userId: otherUser?.id || null,
+        name: otherUser?.name || "Unknown",
+        avatar: otherUser?.avatar || null,
         message: chat.messages[0]?.content || "No messages yet",
         lastMessageTime: chat.messages[0]?.createdAt || chat.createdAt,
       }

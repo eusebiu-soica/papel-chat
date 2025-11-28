@@ -46,15 +46,11 @@ export default function RootLayout({
           <ChatProvider>
             <div className="font-sans flex flex-row min-h-screen">
               <Sidebar />
-              <Card className="w-full p-3 px-8 rounded-none border-none">
-                {/* <CardHeader className="px-0">
-                  <ChatTitle title="Welcome" />
-                </CardHeader> */}
-                <CardContent className={"space-y-2 max-h-[70vh] w-full overflow-y-auto px-0"}>
+              <Card className="flex-1 flex flex-col p-3 px-8 rounded-none border-none">
+                <CardContent className={"flex-1 min-h-0 space-y-2 w-full overflow-hidden px-0"}>
                   {children}
                 </CardContent>
               </Card>
-              {/* {children} */}
             </div>
           </ChatProvider>
         </ThemeProvider>

@@ -4,6 +4,7 @@ import type React from "react"
 
 import { Plus, Copy, User, Users, Clock, Check, Building2, MessageSquareDashed } from "lucide-react"
 import { useEffect, useState } from "react"
+import { useChat } from "@/lib/context/chat-context"
 import { Button } from "./ui/button"
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "./ui/dialog"
 import { Drawer, DrawerContent, DrawerTitle, DrawerTrigger } from "./ui/drawer"
@@ -133,13 +134,103 @@ export default function AddNew() {
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">Share this link to invite people to chat</p>
+        {chatType === 'single' && (
+          <div className="pt-2">
+            <label className="text-sm font-medium">Participant ID</label>
+            <Input value={participantId} onChange={(e) => setParticipantId(e.target.value)} placeholder="User ID or email" />
+            <p className="text-xs text-muted-foreground">Enter the user id or email to start a private chat</p>
+          </div>
+        )}
       </div>
     </div>
   )
 
+  // Controlled open state so we can close after creation
+  const [open, setOpen] = useState(false)
+  const [roomName, setRoomName] = useState("")
+  const [participantId, setParticipantId] = useState("")
+  const { chats, setChats, currentUserId } = useChat()
+
+  const handleCreate = async () => {
+    try {
+      if (chatType === "room") {
+        const res = await fetch('/api/rooms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: roomName || `Room ${roomId}`, topic: '', createdBy: currentUserId || 'current-user' }),
+        })
+        if (!res.ok) throw new Error('Failed to create room')
+        const room = await res.json()
+        // Dispatch refresh and optionally update UI
+        window.dispatchEvent(new CustomEvent('chats:refresh'))
+        setOpen(false)
+        return
+      }
+
+      if (chatType === 'single') {
+        if (!participantId) {
+          alert('Please enter participant id')
+          return
+        }
+        // If participantId looks like an email, try to resolve or create the user first
+        let userId2 = participantId
+        if (participantId.includes('@')) {
+          // try to find existing user by email
+          const usersRes = await fetch('/api/users')
+          if (usersRes.ok) {
+            const users = await usersRes.json()
+            const found = users.find((u: any) => u.email === participantId)
+            if (found) {
+              userId2 = found.id
+            } else {
+              // create the user
+              const nameGuess = participantId.split('@')[0]
+              const createRes = await fetch('/api/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: participantId, name: nameGuess }),
+              })
+              if (!createRes.ok) throw new Error('Failed to create participant user')
+              const created = await createRes.json()
+              userId2 = created.id
+            }
+          }
+        }
+
+        const res = await fetch('/api/chats', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId1: currentUserId || 'current-user', userId2 }),
+        })
+        if (!res.ok) throw new Error('Failed to create chat')
+        const chat = await res.json()
+        // Optimistic update: prepend to context chats
+        if (setChats) setChats((prev: any) => [{ id: chat.id, name: chat.user2?.name || 'New Chat', message: chat.messages?.[0]?.content || 'No messages yet', unreadCount: 0, imageUrl: chat.user2?.avatar || null }, ...prev])
+        window.dispatchEvent(new CustomEvent('chats:refresh'))
+        setOpen(false)
+        return
+      }
+
+      if (chatType === 'temporary') {
+        const res = await fetch('/api/rooms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: `Temp ${roomId}`, topic: '', createdBy: currentUserId || 'current-user' }),
+        })
+        if (!res.ok) throw new Error('Failed to create temporary room')
+        window.dispatchEvent(new CustomEvent('chats:refresh'))
+        setOpen(false)
+        return
+      }
+    } catch (err) {
+      console.error(err)
+      alert('Failed to create')
+    }
+  }
+
   if (isMobile) {
     return (
-      <Drawer>
+      <Drawer open={open} onOpenChange={setOpen}>
         <DrawerTrigger asChild>
           <Button variant="default" className="rounded-full size-12 cursor-pointer" size="icon-lg">
             <Plus className="size-5" />
@@ -150,6 +241,12 @@ export default function AddNew() {
           <div className="px-4 py-6 pb-16">
             <DrawerTitle className="text-xl font-semibold mb-4 space-y-4">Creează un chat nou</DrawerTitle>
             <Content />
+            <div className="mt-4 flex items-center justify-end gap-2">
+              {chatType === 'room' && (
+                <Input value={roomName} onChange={(e) => setRoomName(e.target.value)} placeholder="Room name" />
+              )}
+              <Button onClick={handleCreate}>Create</Button>
+            </div>
           </div>
         </DrawerContent>
       </Drawer>
@@ -157,7 +254,7 @@ export default function AddNew() {
   }
 
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="default" className="rounded-full size-12 cursor-pointer" size="icon-lg">
           <Plus className="size-5" />
@@ -167,6 +264,12 @@ export default function AddNew() {
       <DialogContent className="sm:max-w-3xl">
         <DialogTitle className="text-xl font-semibold">Create a new chat</DialogTitle>
         <Content />
+        <div className="mt-4 flex items-center justify-end gap-2">
+          {chatType === 'room' && (
+            <Input value={roomName} onChange={(e) => setRoomName(e.target.value)} placeholder="Room name" />
+          )}
+          <Button onClick={handleCreate}>Create</Button>
+        </div>
       </DialogContent>
     </Dialog>
   )
