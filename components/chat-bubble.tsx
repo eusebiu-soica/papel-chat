@@ -1,10 +1,11 @@
 import { cn } from "@/lib/utils"
-import { Avatar } from "./ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar"
 
 interface ChatBubbleProps {
   content: string
   timestamp: string
   sender: {
+    id?: string
     name: string
     avatar?: string
   }
@@ -13,28 +14,45 @@ interface ChatBubbleProps {
 
 export function ChatBubble({ content, timestamp, sender, isOwn = false }: ChatBubbleProps) {
   return (
-    <div className={cn("flex w-full gap-2 p-2", isOwn ? "flex-row-reverse" : "flex-row")}>
-      <Avatar className="h-8 w-8">
-        <img
-          src={sender.avatar || `https://avatar.vercel.sh/${sender.name}`}
-          alt={sender.name}
-          className="h-full w-full object-cover"
-        />
-      </Avatar>
-      <div className={cn("flex max-w-[70%] flex-col gap-1", isOwn ? "items-end" : "items-start")}>
-        <div className="text-sm text-muted-foreground">{sender.name}</div>
+    <div className={cn("flex w-full items-end gap-3 px-2", isOwn ? "justify-end" : "justify-start")}>
+      {!isOwn && (
+        <Avatar className="h-9 w-9">
+          {sender.avatar ? (
+            <AvatarImage src={sender.avatar} alt={sender.name} />
+          ) : (
+            <AvatarFallback>{sender.name.charAt(0)}</AvatarFallback>
+          )}
+        </Avatar>
+      )}
+
+      <div className={cn("max-w-[78%]")}>{/* message column */}
+        <div className={cn("mb-1 text-xs text-muted-foreground", isOwn ? "text-right" : "text-left")}>{!isOwn ? sender.name : ""}</div>
+
         <div
           className={cn(
-            "rounded-lg px-4 py-2",
+            "relative inline-block rounded-2xl px-4 py-2 text-sm leading-relaxed shadow-sm",
             isOwn
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted text-muted-foreground"
+              ? "bg-gradient-to-br from-indigo-500 to-violet-500 text-white"
+              : "bg-zinc-800 text-zinc-100"
           )}
         >
           {content}
+
+          <div className={cn("absolute -bottom-5 right-3 text-[11px] text-muted-foreground")}>
+            {timestamp}
+          </div>
         </div>
-        <div className="text-xs text-muted-foreground">{timestamp}</div>
       </div>
+
+      {isOwn && (
+        <Avatar className="h-9 w-9">
+          {sender.avatar ? (
+            <AvatarImage src={sender.avatar} alt={sender.name} />
+          ) : (
+            <AvatarFallback>{sender.name.charAt(0)}</AvatarFallback>
+          )}
+        </Avatar>
+      )}
     </div>
   )
 }

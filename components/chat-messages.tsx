@@ -33,8 +33,8 @@ export function ChatMessages({ messages, currentUserId, className }: ChatMessage
   }, [messages])
 
   return (
-    <ScrollArea className={cn("flex-1 p-4", className)} ref={scrollRef}>
-      <div className="flex flex-col gap-4">
+    <ScrollArea className={cn("flex-1 overflow-y-auto px-6 py-6", className)} ref={scrollRef}>
+      <div className="mx-auto flex max-w-[820px] flex-col gap-4">
         {messages.map((message) => (
           <ChatBubble
             key={message.id}

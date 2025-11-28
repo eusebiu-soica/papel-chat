@@ -18,6 +18,11 @@ export default function ChatsList({ chats }: ChatsListProps) {
             {chats.map((chat) => (
                 <ChatItem
                     key={chat.id}
+                    id={chat.id}
+                    name={chat.name}
+                    message={chat.message}
+                    unreadCount={chat.unreadCount}
+                    imageUrl={chat.imageUrl}
                 />
             ))}
         </div>

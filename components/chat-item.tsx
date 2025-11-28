@@ -4,6 +4,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item"
 import { Badge } from "./ui/badge"
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 import { ContextMenu, ContextMenuItem as MenuItem, ContextMenuSeparator } from "@radix-ui/react-context-menu"
 import {
   ContextMenuContent,
@@ -47,34 +48,47 @@ const contextMenuItems: MenuItemType[] = [
   },
 ]
 
-function ItemTrigger() {
+interface ChatItemProps {
+  id: string
+  name: string
+  message: string
+  unreadCount?: number
+  imageUrl?: string
+}
+
+function ItemTrigger({ id, name, imageUrl, message, isActive }: ChatItemProps & { isActive: boolean }) {
   return (
-    <Item asChild variant="default" className="p-3 hover:bg-muted/50">
-      <Link href="/chat/1">
+    <Item asChild variant="default" className={cn("p-3 hover:bg-muted/50 transition-colors", isActive && "bg-muted/70 border-l-2 border-indigo-500")}>
+      <Link href={`/chat/${id}`}>
         <ItemMedia>
           <Avatar className="size-10">
-            <AvatarImage src="https://github.com/evilrabbit.png" />
-            <AvatarFallback>ER</AvatarFallback>
+            <AvatarImage src={imageUrl} />
+            <AvatarFallback>{name.charAt(0).toUpperCase()}</AvatarFallback>
           </Avatar>
         </ItemMedia>
         <ItemContent>
-          <ItemTitle>Evil Rabbit</ItemTitle>
-          <ItemDescription>Last seen 5 months ago</ItemDescription>
+          <ItemTitle>{name}</ItemTitle>
+          <ItemDescription className="line-clamp-1">{message}</ItemDescription>
         </ItemContent>
-        <ItemActions>
-          <Badge variant="default" >3</Badge>
-        </ItemActions>
+        {(unreadCount ?? 0) > 0 && (
+          <ItemActions>
+            <Badge variant="default">{unreadCount}</Badge>
+          </ItemActions>
+        )}
       </Link>
     </Item>
   )
 }
 
-export default function ChatItem() {
+export default function ChatItem({ id, name, message, unreadCount, imageUrl }: ChatItemProps) {
+  const pathname = usePathname()
+  const isActive = pathname === `/chat/${id}`
+
   return (
     <div className="flex w-full max-w-xl flex-col gap-0">
       <ContextMenu>
         <ContextMenuTrigger>
-          <ItemTrigger />
+          <ItemTrigger id={id} name={name} message={message} unreadCount={unreadCount} imageUrl={imageUrl} isActive={isActive} />
         </ContextMenuTrigger>
         <ContextMenuContent className="max-w-[300px] w-[200px] rounded-lg overflow-hidden">
           {contextMenuItems.map((menuItem, index) =>
