@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { ClerkProvider } from "@clerk/nextjs";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ChatProvider } from "@/lib/context/chat-context";
 import Sidebar from "@/components/sidebar";
@@ -33,28 +34,23 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning suppressContentEditableWarning>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased relative`}
-      >
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
+    <ClerkProvider>
+      <html lang="en" suppressHydrationWarning suppressContentEditableWarning>
+        <body
+          className={`${geistSans.variable} ${geistMono.variable} antialiased relative`}
         >
-          <ChatProvider>
-            <div className="font-sans flex flex-row min-h-screen">
-              <Sidebar />
-              <Card className="flex-1 flex flex-col p-3 px-8 rounded-none border-none">
-                <CardContent className={"flex-1 min-h-0 space-y-2 w-full overflow-hidden px-0"}>
-                  {children}
-                </CardContent>
-              </Card>
-            </div>
-          </ChatProvider>
-        </ThemeProvider>
-      </body>
-    </html>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="system"
+            enableSystem
+            disableTransitionOnChange
+          >
+            <ChatProvider>
+              {children}
+            </ChatProvider>
+          </ThemeProvider>
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }

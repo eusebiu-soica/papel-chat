@@ -5,11 +5,12 @@ import { BellOff, CheckCheck, Pin, Trash } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item"
 import { Badge } from "./ui/badge"
-import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { ContextMenu, ContextMenuItem as MenuItem, ContextMenuSeparator } from "@radix-ui/react-context-menu"
 import {
+  ContextMenu,
   ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuSub,
   ContextMenuSubContent,
   ContextMenuSubTrigger,
@@ -58,46 +59,46 @@ interface ChatItemProps {
   imageUrl?: string
 }
 
-function ItemTrigger({ id, name, imageUrl, message, unreadCount, isActive }: ChatItemProps & { isActive: boolean }) {
-  const router = useRouter()
-
-  const handleClick = (e: React.MouseEvent) => {
-    e.preventDefault()
-    router.push(`/chat/${id}`)
-  }
-
-  return (
-    <Item asChild variant="default" className={cn("p-3 hover:bg-muted/50 transition-colors", isActive && "bg-muted/70 border-l-2 border-indigo-500")}>
-      <Link href={`/chat/${id}`} data-chat-id={id} onClick={handleClick}>
-        <ItemMedia>
-          <Avatar className="size-10">
-            <AvatarImage src={imageUrl} />
-            <AvatarFallback>{name.charAt(0).toUpperCase()}</AvatarFallback>
-          </Avatar>
-        </ItemMedia>
-        <ItemContent>
-          <ItemTitle>{name}</ItemTitle>
-          <ItemDescription className="line-clamp-1">{message}</ItemDescription>
-        </ItemContent>
-        {(unreadCount ?? 0) > 0 && (
-          <ItemActions>
-            <Badge variant="default">{unreadCount}</Badge>
-          </ItemActions>
-        )}
-      </Link>
-    </Item>
-  )
-}
-
 export default function ChatItem({ id, name, message, unreadCount, imageUrl }: ChatItemProps) {
   const pathname = usePathname()
+  const router = useRouter()
   const isActive = pathname === `/chat/${id}`
+
+  const handleClick = (e: React.MouseEvent) => {
+    // Only navigate on left click, not right click
+    if (e.button === 0 || (e.type === 'click' && e.detail > 0)) {
+      e.preventDefault()
+      router.push(`/chat/${id}`)
+    }
+  }
 
   return (
     <div className="flex w-full max-w-xl flex-col gap-0">
       <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <ItemTrigger id={id} name={name} message={message} unreadCount={unreadCount} imageUrl={imageUrl} isActive={isActive} />
+        <ContextMenuTrigger className="w-full">
+          <Item 
+            variant="default" 
+            className={cn("p-3 hover:bg-muted/50 transition-colors cursor-pointer w-full", isActive && "bg-muted/70 border-l-2 border-indigo-500")}
+            onClick={handleClick}
+          >
+            <div className="flex items-center w-full">
+              <ItemMedia>
+                <Avatar className="size-10">
+                  <AvatarImage src={imageUrl} />
+                  <AvatarFallback>{name.charAt(0).toUpperCase()}</AvatarFallback>
+                </Avatar>
+              </ItemMedia>
+              <ItemContent>
+                <ItemTitle>{name}</ItemTitle>
+                <ItemDescription className="line-clamp-1">{message}</ItemDescription>
+              </ItemContent>
+              {(unreadCount ?? 0) > 0 && (
+                <ItemActions>
+                  <Badge variant="default">{unreadCount}</Badge>
+                </ItemActions>
+              )}
+            </div>
+          </Item>
         </ContextMenuTrigger>
         <ContextMenuContent className="max-w-[300px] w-[200px] rounded-lg overflow-hidden">
           {contextMenuItems.map((menuItem, index) =>
@@ -108,29 +109,27 @@ export default function ChatItem({ id, name, message, unreadCount, imageUrl }: C
                   <span>{menuItem.label}</span>
                 </ContextMenuSubTrigger>
                 <ContextMenuSubContent className="p-1">
-                  <MenuItem className="p-2 hover:bg-muted/50 rounded-sm cursor-pointer">15 min</MenuItem>
-                  <MenuItem className="p-2 hover:bg-muted/50 rounded-sm cursor-pointer">30 min</MenuItem>
-                  <MenuItem className="p-2 hover:bg-muted/50 rounded-sm cursor-pointer">1 hour</MenuItem>
-                  <MenuItem className="p-2 hover:bg-muted/50 rounded-sm cursor-pointer">8 hours</MenuItem>
-                  <MenuItem className="p-2 hover:bg-muted/50 rounded-sm cursor-pointer">1 day</MenuItem>
-                  <MenuItem className="p-2 hover:bg-muted/50 rounded-sm cursor-pointer">1 week</MenuItem>
+                  <ContextMenuItem className="p-2 cursor-pointer" onClick={() => console.log("Mute for 15 min")}>15 min</ContextMenuItem>
+                  <ContextMenuItem className="p-2 cursor-pointer" onClick={() => console.log("Mute for 30 min")}>30 min</ContextMenuItem>
+                  <ContextMenuItem className="p-2 cursor-pointer" onClick={() => console.log("Mute for 1 hour")}>1 hour</ContextMenuItem>
+                  <ContextMenuItem className="p-2 cursor-pointer" onClick={() => console.log("Mute for 8 hours")}>8 hours</ContextMenuItem>
+                  <ContextMenuItem className="p-2 cursor-pointer" onClick={() => console.log("Mute for 1 day")}>1 day</ContextMenuItem>
+                  <ContextMenuItem className="p-2 cursor-pointer" onClick={() => console.log("Mute for 1 week")}>1 week</ContextMenuItem>
                   <ContextMenuSeparator />
-                  <MenuItem className="p-2 hover:bg-muted/50 rounded-sm cursor-pointer">Forever</MenuItem>
+                  <ContextMenuItem className="p-2 cursor-pointer" onClick={() => console.log("Mute forever")}>Forever</ContextMenuItem>
                 </ContextMenuSubContent>
               </ContextMenuSub>
             ) : (
-              <Item
+              <ContextMenuItem
                 key={index}
-                variant="default"
-                className={cn("p-2 gap-4 hover:bg-muted/50 cursor-pointer w-full", menuItem.className)}
+                className={cn("p-2 gap-4 cursor-pointer", menuItem.className)}
+                onClick={menuItem.onClick}
               >
-                <ItemMedia variant="default" className="p-0">
+                <div className="flex items-center gap-4">
                   {menuItem.icon}
-                </ItemMedia>
-                <ItemContent>
-                  <ItemTitle>{menuItem.label}</ItemTitle>
-                </ItemContent>
-              </Item>
+                  <span>{menuItem.label}</span>
+                </div>
+              </ContextMenuItem>
             ),
           )}
         </ContextMenuContent>

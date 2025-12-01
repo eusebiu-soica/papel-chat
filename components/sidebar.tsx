@@ -10,14 +10,20 @@ import { useEffect } from "react"
 import { useChat } from "@/lib/context/chat-context"
 
 export default function Sidebar() {
-    const { chats, setChats } = useChat()
+    const { chats, setChats, currentUserId } = useChat()
 
     const fetchChats = async () => {
       try {
-        const res = await fetch('/api/chats')
+        if (!currentUserId) return
+        const res = await fetch(`/api/chats?userId=${currentUserId}`)
         if (!res.ok) return
         const data = await res.json()
-        setChats(data)
+        // Parse dates from API response
+        const parsedChats = data.map((chat: any) => ({
+          ...chat,
+          lastMessageTime: new Date(chat.lastMessageTime),
+        }))
+        setChats(parsedChats)
       } catch (err) {
         console.error('Failed to fetch chats', err)
       }
@@ -66,7 +72,7 @@ export default function Sidebar() {
         document.removeEventListener('visibilitychange', onVisibility)
         stopPolling()
       }
-    }, [])
+    }, [currentUserId, setChats])
 
     return (
         <Card className="relative rounded-none bg-transparent border-none max-w-[420px] w-full p-[8px] gap-0">
@@ -74,7 +80,12 @@ export default function Sidebar() {
                 <SidebarHeader />
             </CardHeader>
             <CardContent className="px-0 max-h-[calc(100vh-85px)] overflow-y-auto pb-24">
-                <ChatsList chats={chats} />
+                <ChatsList chats={chats.map(chat => ({
+                  id: chat.id,
+                  name: chat.name,
+                  message: chat.message,
+                  imageUrl: chat.avatar,
+                }))} />
             </CardContent>
             <CardFooter className="px-0 absolute bottom-4 right-4 mb-4 mr-4 pointer-events-none">
                 <div className="pointer-events-auto">

@@ -1,10 +1,32 @@
 import { NextRequest, NextResponse } from "next/server"
+import { auth, currentUser } from "@clerk/nextjs/server"
 import prisma from "@/lib/prisma"
 
 export async function GET(request: NextRequest) {
+  const { userId: authUserId } = await auth()
+  
+  if (!authUserId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
   try {
-    // Get all chats for a user
-    const userId = request.nextUrl.searchParams.get("userId")
+    // Get Clerk user to find database user
+    const clerkUser = await currentUser()
+    if (!clerkUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+    
+    // Find database user by email
+    const dbUser = await prisma.user.findUnique({
+      where: { email: clerkUser.primaryEmailAddress?.emailAddress || '' },
+    })
+    
+    if (!dbUser) {
+      return NextResponse.json({ error: "User not found in database" }, { status: 400 })
+    }
+    
+    // Get all chats for the authenticated user (use database user ID)
+    const queryUserId = request.nextUrl.searchParams.get("userId")
+    const userId = queryUserId || dbUser.id
 
     let chats
     if (userId) {
@@ -69,10 +91,111 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId1, userId2 } = await request.json()
+    const { userId } = await auth()
+    
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const { userId1, userId2, shareableId, isPending } = await request.json()
+
+    // If creating a pending chat (for shareable links), use authenticated userId
+    if (isPending) {
+      // Get Clerk user to find database user by email
+      const clerkUser = await currentUser()
+      if (!clerkUser) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      }
+      
+      // Find database user by email (since Clerk ID != DB ID)
+      let dbUser = await prisma.user.findUnique({
+        where: { email: clerkUser.primaryEmailAddress?.emailAddress || '' },
+      })
+      
+      // If user doesn't exist in DB, create them
+      if (!dbUser) {
+        dbUser = await prisma.user.create({
+          data: {
+            email: clerkUser.primaryEmailAddress?.emailAddress || '',
+            name: clerkUser.fullName || clerkUser.firstName || 'User',
+            avatar: clerkUser.imageUrl || undefined,
+          },
+        })
+      }
+      
+      const dbUserId = dbUser.id
+      
+      // For pending chats, we need a placeholder user for userId2
+      // Check if a system/pending user exists, or create one
+      let pendingUser = await prisma.user.findFirst({
+        where: { email: 'pending@system.local' },
+      })
+      
+      if (!pendingUser) {
+        pendingUser = await prisma.user.create({
+          data: {
+            email: 'pending@system.local',
+            name: 'Pending User',
+          },
+        })
+      }
+      
+      // Check if a pending chat already exists for this user
+      const existingPendingChat = await prisma.chat.findUnique({
+        where: {
+          userId1_userId2: {
+            userId1: dbUserId,
+            userId2: pendingUser.id,
+          },
+        },
+        include: {
+          user1: true,
+          user2: true,
+        },
+      })
+      
+      if (existingPendingChat) {
+        // Return existing pending chat
+        return NextResponse.json({ ...existingPendingChat, isPending: true, shareableId }, { status: 200 })
+      }
+      
+      // Create a new pending chat with the placeholder user
+      const chat = await prisma.chat.create({
+        data: {
+          userId1: dbUserId, // Use database user ID, not Clerk ID
+          userId2: pendingUser.id, // Placeholder - will be updated when someone joins
+        },
+        include: {
+          user1: true,
+          user2: true,
+        },
+      })
+      
+      return NextResponse.json({ ...chat, isPending: true, shareableId }, { status: 201 })
+    }
 
     if (!userId1 || !userId2) {
       return NextResponse.json({ error: "userId1 and userId2 are required" }, { status: 400 })
+    }
+    
+    // Get Clerk user to find database user
+    const clerkUser = await currentUser()
+    if (!clerkUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+    
+    // Find database user by email
+    const dbUser = await prisma.user.findUnique({
+      where: { email: clerkUser.primaryEmailAddress?.emailAddress || '' },
+    })
+    
+    if (!dbUser) {
+      return NextResponse.json({ error: "User not found in database" }, { status: 400 })
+    }
+    
+    // Ensure the authenticated user is part of the chat (using database user ID)
+    if (userId1 !== dbUser.id && userId2 !== dbUser.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
     }
 
     // Check if chat already exists
@@ -102,8 +225,11 @@ export async function POST(request: NextRequest) {
     })
 
     return NextResponse.json(chat, { status: 201 })
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error creating chat:", error)
-    return NextResponse.json({ error: "Failed to create chat" }, { status: 500 })
+    return NextResponse.json({ 
+      error: "Failed to create chat", 
+      details: error?.message || 'Unknown error' 
+    }, { status: 500 })
   }
 }

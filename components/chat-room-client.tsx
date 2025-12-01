@@ -27,7 +27,9 @@ export default function ChatRoomClient({ id, title, imageUrl, messages, currentU
         return
       }
 
-      // Optionally update optimistic UI here. We intentionally avoid noisy logs in production.
+      // Trigger refresh of messages and chats
+      window.dispatchEvent(new CustomEvent('messages:refresh'))
+      window.dispatchEvent(new CustomEvent('chats:refresh'))
     } catch (err) {
       console.error('Error sending message', err)
     }

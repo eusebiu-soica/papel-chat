@@ -38,7 +38,7 @@ export function ChatBubble({ content, timestamp, sender, isOwn = false }: ChatBu
         >
           {content}
 
-          <div className={cn("absolute -bottom-5 right-3 text-[11px] text-muted-foreground")}>
+          <div className={cn("mt-1 text-[11px] opacity-70", isOwn ? "text-right text-white/80" : "text-left text-muted-foreground")}>
             {timestamp}
           </div>
         </div>

@@ -1,6 +1,7 @@
 "use client"
 
 import React, { createContext, useContext, useState, ReactNode, useEffect } from "react"
+import { useUser } from "@clerk/nextjs"
 
 interface Chat {
   id: string
@@ -25,29 +26,40 @@ interface ChatContextType {
 const ChatContext = createContext<ChatContextType | undefined>(undefined)
 
 export function ChatProvider({ children }: { children: ReactNode }) {
+  const { user, isLoaded } = useUser()
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null)
   const [chats, setChats] = useState<Chat[]>([])
   const [loading, setLoading] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
   useEffect(() => {
-    let mounted = true
-    ;(async () => {
-      try {
-        const res = await fetch('/api/users')
-        if (!res.ok) return
-        const users = await res.json()
-        if (mounted && users && users.length > 0) {
-          // Prefer the seeded "john@example.com" user, fallback to first
-          const seeded = users.find((u: any) => u.email === 'john@example.com')
-          setCurrentUserId(seeded?.id || users[0].id)
+    if (isLoaded && user) {
+      // Ensure user exists in database and get the database user ID
+      ;(async () => {
+        try {
+          const res = await fetch('/api/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: user.primaryEmailAddress?.emailAddress || '',
+              name: user.fullName || user.firstName || 'User',
+              avatar: user.imageUrl || undefined,
+            }),
+          })
+          
+          if (res.ok) {
+            const dbUser = await res.json()
+            // Use the database user ID, not Clerk ID
+            setCurrentUserId(dbUser.id)
+          } else {
+            console.error('Failed to sync user with database')
+          }
+        } catch (err) {
+          console.error('Failed to sync user with database', err)
         }
-      } catch (err) {
-        // ignore
-      }
-    })()
-    return () => { mounted = false }
-  }, [])
+      })()
+    }
+  }, [isLoaded, user])
 
   return (
     <ChatContext.Provider

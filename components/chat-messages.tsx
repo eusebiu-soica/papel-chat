@@ -1,3 +1,5 @@
+"use client"
+
 import { useEffect, useRef } from "react"
 import { ChatBubble } from "./chat-bubble"
 import { cn } from "@/lib/utils"
@@ -21,29 +23,35 @@ interface ChatMessagesProps {
 }
 
 export function ChatMessages({ messages, currentUserId, className }: ChatMessagesProps) {
-  const scrollRef = useRef<HTMLDivElement>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTo({
-        top: scrollRef.current.scrollHeight,
-        behavior: "smooth",
-      })
-    }
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
   return (
-    <ScrollArea className={cn("flex-1 overflow-y-auto px-6 py-6", className)} ref={scrollRef}>
-      <div className="flex flex-col gap-4">
-        {messages.map((message) => (
-          <ChatBubble
-            key={message.id}
-            content={message.content}
-            timestamp={message.timestamp}
-            sender={message.sender}
-            isOwn={message.sender.id === currentUserId}
-          />
-        ))}
+    <ScrollArea className={cn("h-full w-full", className)}>
+      <div className="px-6 py-6">
+        <div className="flex flex-col gap-4">
+          {messages.length === 0 ? (
+            <div className="flex items-center justify-center h-full min-h-[200px] text-muted-foreground">
+              <p>No messages yet. Start the conversation!</p>
+            </div>
+          ) : (
+            <>
+              {messages.map((message) => (
+                <ChatBubble
+                  key={message.id}
+                  content={message.content}
+                  timestamp={message.timestamp}
+                  sender={message.sender}
+                  isOwn={message.sender.id === currentUserId}
+                />
+              ))}
+              <div ref={messagesEndRef} />
+            </>
+          )}
+        </div>
       </div>
     </ScrollArea>
   )
