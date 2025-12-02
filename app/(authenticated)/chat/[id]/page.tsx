@@ -2,82 +2,51 @@
 
 import ChatRoomClient from "@/components/chat-room-client"
 import { useChat } from "@/lib/context/chat-context"
-import { useEffect, useState, useCallback, use, useMemo } from "react"
+import { useEffect, useState, useCallback, use } from "react"
 import type { Message } from "@/components/chat-messages"
-
-// Cache for chat data to reduce loading time
-const chatCache = new Map<string, { name: string; avatar?: string; timestamp: number }>()
-const messagesCache = new Map<string, { messages: Message[]; timestamp: number }>()
-const CACHE_DURATION = 30000 // 30 seconds
 
 export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const { currentUserId } = useChat()
-  const [chat, setChat] = useState<{ name: string; avatar?: string } | null>(() => {
-    const cached = chatCache.get(id)
-    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-      return { name: cached.name, avatar: cached.avatar }
-    }
-    return null
-  })
-  const [messages, setMessages] = useState<Message[]>(() => {
-    const cached = messagesCache.get(id)
-    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-      return cached.messages
-    }
-    return []
-  })
-  const [loading, setLoading] = useState(!chat || messages.length === 0)
+  const [chat, setChat] = useState<{ name: string; avatar?: string } | null>(null)
+  const [messages, setMessages] = useState<Message[]>([])
+  const [loading, setLoading] = useState(true)
 
+  // 1. Fetch doar pentru chat-ul curent (Rapid)
   const fetchChatData = useCallback(async () => {
     if (!currentUserId) return
-    
-    // Check cache first
-    const cached = chatCache.get(id)
-    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-      setChat({ name: cached.name, avatar: cached.avatar })
-      return
-    }
-
     try {
-      const res = await fetch(`/api/chats?userId=${currentUserId}`, {
-        next: { revalidate: 10 } // Cache for 10 seconds
+      // Cerem un singur chat după ID
+      const res = await fetch(`/api/chats?id=${id}&userId=${currentUserId}`, {
+        cache: 'no-store'
       })
       if (!res.ok) return
       const chats = await res.json()
-      const foundChat = chats.find((c: any) => c.id === id)
-      if (foundChat) {
-        const chatData = {
-          name: foundChat.name || "Chat",
-          avatar: foundChat.avatar || undefined,
-        }
-        setChat(chatData)
-        // Update cache
-        chatCache.set(id, { ...chatData, timestamp: Date.now() })
+      
+      // API-ul returnează un array, luăm primul element
+      if (chats && chats.length > 0) {
+        setChat({
+          name: chats[0].name || "Chat",
+          avatar: chats[0].avatar || undefined,
+        })
       }
     } catch (err) {
       console.error('Failed to fetch chat data', err)
     }
   }, [id, currentUserId])
 
+  // 2. Fetch mesaje cu NO-STORE cache
   const fetchMessages = useCallback(async () => {
-    // Check cache first
-    const cached = messagesCache.get(id)
-    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-      setMessages(cached.messages)
-      setLoading(false)
-      return
-    }
-
     try {
       const res = await fetch(`/api/messages?chatId=${id}`, {
-        next: { revalidate: 5 } // Cache for 5 seconds
+        cache: 'no-store' // CRITIC: Forțează date proaspete de fiecare dată
       })
       if (!res.ok) {
         setLoading(false)
         return
       }
       const data = await res.json()
+      
       const formattedMessages: Message[] = data.map((msg: any) => ({
         id: msg.id,
         content: msg.content,
@@ -89,8 +58,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         },
       }))
       setMessages(formattedMessages)
-      // Update cache
-      messagesCache.set(id, { messages: formattedMessages, timestamp: Date.now() })
     } catch (err) {
       console.error('Failed to fetch messages', err)
     } finally {
@@ -98,44 +65,30 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     }
   }, [id])
 
-  // Initial load - only fetch if not in cache
+  // Funcție pentru actualizare instantă (Optimistic UI)
+  const addOptimisticMessage = (newMsg: Message) => {
+    setMessages((prev) => [...prev, newMsg])
+  }
+
+  // Inițializare
   useEffect(() => {
     if (currentUserId) {
-      if (!chat) {
-        fetchChatData()
-      }
-      if (messages.length === 0) {
-        fetchMessages()
-      } else {
-        setLoading(false)
-      }
+      fetchChatData()
+      fetchMessages()
     }
-  }, [currentUserId]) // Only run once when currentUserId is available
+  }, [currentUserId, fetchChatData, fetchMessages])
 
-  // Poll for new messages (less frequently)
+  // Polling rapid (3s) pentru timp real
   useEffect(() => {
     if (!currentUserId || !id) return
     const interval = setInterval(() => {
       if (!document.hidden) {
         fetchMessages()
       }
-    }, 5000) // Poll every 5 seconds instead of 3
+    }, 3000)
 
     return () => clearInterval(interval)
   }, [currentUserId, id, fetchMessages])
-
-  // Listen for message refresh events
-  useEffect(() => {
-    const handleRefresh = () => {
-      // Clear cache and refetch
-      chatCache.delete(id)
-      messagesCache.delete(id)
-      fetchMessages()
-      fetchChatData()
-    }
-    window.addEventListener('messages:refresh', handleRefresh)
-    return () => window.removeEventListener('messages:refresh', handleRefresh)
-  }, [id, fetchMessages, fetchChatData])
 
   if (loading && !currentUserId) {
     return (
@@ -145,17 +98,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     )
   }
 
-  if (!chat && currentUserId) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-muted-foreground">Chat not found</p>
-      </div>
-    )
-  }
-
-  if (!currentUserId) {
-    return null
-  }
+  if (!currentUserId) return null
 
   return (
     <ChatRoomClient
@@ -164,7 +107,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       imageUrl={chat?.avatar}
       messages={messages}
       currentUserId={currentUserId}
+      onOptimisticUpdate={addOptimisticMessage} // Trimitem funcția în jos
     />
   )
 }
-

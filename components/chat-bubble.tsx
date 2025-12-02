@@ -30,15 +30,15 @@ export function ChatBubble({ content, timestamp, sender, isOwn = false }: ChatBu
 
         <div
           className={cn(
-            "relative inline-block rounded-2xl px-4 py-2 text-sm leading-relaxed shadow-sm",
+            "relative inline-block rounded-2xl px-4 py-2 text-sm leading-relaxed",
             isOwn
-              ? "bg-gradient-to-br from-indigo-500 to-violet-500 text-white"
-              : "bg-zinc-800 text-zinc-100"
+              ? "bg-indigo-600 text-white shadow-sm"
+              : "bg-slate-700 text-slate-100 shadow"
           )}
         >
           {content}
 
-          <div className={cn("mt-1 text-[11px] opacity-70", isOwn ? "text-right text-white/80" : "text-left text-muted-foreground")}>
+          <div className={cn("mt-1 text-[11px] opacity-70", isOwn ? "text-right text-primary-foreground/80" : "text-left text-muted-foreground")}>
             {timestamp}
           </div>
         </div>

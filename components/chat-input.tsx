@@ -89,7 +89,7 @@ export function ChatInput({ onSendMessage, className, placeholder = "Type a mess
           onClick={handleSubmit}
           disabled={!message.trim()}
           size="icon"
-          className="h-10 w-10 shrink-0 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 p-0 text-white hover:opacity-95 disabled:opacity-50 transition-opacity"
+          className="h-10 w-10 shrink-0 rounded-full bg-indigo-600 p-0 text-white hover:opacity-95 disabled:opacity-50 transition-opacity"
         >
           <SendHorizontal className="h-5 w-5" />
         </Button>

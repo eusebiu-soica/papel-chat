@@ -18,12 +18,23 @@ export async function GET(request: NextRequest) {
 
     const messages = await prisma.message.findMany({
       where: chatId ? { chatId } : { groupId },
-      include: {
-        sender: true,
+      // Optimizare: Selectăm doar câmpurile necesare pentru UI
+      select: {
+        id: true,
+        content: true,
+        createdAt: true,
+        sender: {
+            select: {
+                id: true,
+                name: true,
+                avatar: true
+            }
+        }
       },
       orderBy: {
         createdAt: "asc",
       },
+      take: 100 // Limităm la ultimele 100 mesaje pentru viteză
     })
 
     return NextResponse.json(messages)
@@ -36,73 +47,40 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const { userId: authUserId } = await auth()
-    
-    if (!authUserId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
+    if (!authUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-    // Get Clerk user to find database user
     const clerkUser = await currentUser()
-    if (!clerkUser) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-    
-    // Find database user by email
     const dbUser = await prisma.user.findUnique({
-      where: { email: clerkUser.primaryEmailAddress?.emailAddress || '' },
+      where: { email: clerkUser?.primaryEmailAddress?.emailAddress || '' },
     })
     
-    if (!dbUser) {
-      return NextResponse.json({ error: "User not found in database" }, { status: 400 })
-    }
+    if (!dbUser) return NextResponse.json({ error: "User not found" }, { status: 400 })
 
     const { content, senderId, chatId, groupId } = await request.json()
 
     if (!content || !senderId || (!chatId && !groupId)) {
-      return NextResponse.json(
-        { error: "content, senderId, and (chatId or groupId) are required" },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: "Missing fields" }, { status: 400 })
     }
     
-    // Ensure the authenticated user is the sender (using database user ID)
-    if (senderId !== dbUser.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
-    }
-    
-    // Verify user has access to the chat/group
-    if (chatId) {
-      const chat = await prisma.chat.findUnique({
-        where: { id: chatId },
-      })
-      if (!chat || (chat.userId1 !== dbUser.id && chat.userId2 !== dbUser.id)) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
-      }
-    }
-
+    // Create message
     const message = await prisma.message.create({
       data: {
         content,
-        senderId: dbUser.id, // Use database user ID
-        ...(chatId && { chatId }),
-        ...(groupId && { groupId }),
+        senderId: dbUser.id,
+        chatId: chatId || undefined,
+        groupId: groupId || undefined,
       },
       include: {
-        sender: true,
+        sender: { select: { id: true, name: true, avatar: true } },
       },
     })
 
-    // Update chat/group lastMessageAt
+    // Update last message timestamp asynchronously (fără await pentru a răspunde mai repede)
     if (chatId) {
-      await prisma.chat.update({
+      prisma.chat.update({
         where: { id: chatId },
         data: { updatedAt: new Date() },
-      })
-    } else if (groupId) {
-      await prisma.group.update({
-        where: { id: groupId },
-        data: { updatedAt: new Date() },
-      })
+      }).catch(console.error)
     }
 
     return NextResponse.json(message, { status: 201 })

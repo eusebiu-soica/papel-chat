@@ -1,5 +1,4 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// prisma/schema.prisma
 
 generator client {
   provider = "prisma-client-js"
@@ -27,22 +26,25 @@ model User {
   blockedUsers     BlockedUser[] @relation("BlockedBy")
   blockedByUsers   BlockedUser[] @relation("Blocks")
 
+  @@index([email])
   @@map("users")
 }
 
 model Chat {
   id        String   @id @default(uuid())
   userId1   String
-  userId2   String
+  userId2   String? 
+  
   user1     User     @relation("ChatUser1", fields: [userId1], references: [id], onDelete: Cascade)
-  user2     User     @relation("ChatUser2", fields: [userId2], references: [id], onDelete: Cascade)
+  user2     User?    @relation("ChatUser2", fields: [userId2], references: [id], onDelete: Cascade)
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations
   messages Message[]
 
-  @@unique([userId1, userId2])
+  @@index([userId1])
+  @@index([userId2])
   @@map("chats")
 }
 
@@ -50,14 +52,20 @@ model Message {
   id        String   @id @default(cuid())
   content   String
   senderId  String
-  sender    User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  
   chatId    String?
-  chat      Chat?    @relation(fields: [chatId], references: [id], onDelete: Cascade)
   groupId   String?
-  group     Group?   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  sender    User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  chat      Chat?    @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  group     Group?   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([chatId, createdAt]) 
+  @@index([groupId, createdAt])
+  @@index([senderId])
   @@map("messages")
 }
 
@@ -69,7 +77,6 @@ model Group {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations
   members  GroupMember[]
   messages Message[]
 
