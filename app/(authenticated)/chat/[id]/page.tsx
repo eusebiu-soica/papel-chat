@@ -2,28 +2,35 @@
 
 import ChatRoomClient from "@/components/chat-room-client"
 import { useChat } from "@/lib/context/chat-context"
-import { useEffect, useState, useCallback, use } from "react"
+import { useEffect, useState, useCallback, use, useRef } from "react"
 import type { Message } from "@/components/chat-messages"
+import { useRealtimeMessages } from "@/hooks/use-realtime-messages"
 
 export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const { currentUserId } = useChat()
-  const [chat, setChat] = useState<{ name: string; avatar?: string } | null>(null)
-  const [messages, setMessages] = useState<Message[]>([])
+  const [chat, setChat] = useState<{ name: string; avatar?: string; isGroupChat?: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
+  const isInitialLoadRef = useRef(true)
+  
+  // Determine if it's a group chat or single chat
+  const [isGroupChat, setIsGroupChat] = useState(false)
+  
+  // Use real-time subscription for messages (Firebase) or polling (Prisma)
+  const { messages: realtimeMessages, isLoading: messagesLoading } = useRealtimeMessages(
+    isGroupChat ? { groupId: id } : { chatId: id }
+  )
 
-  // 1. Fetch doar pentru chat-ul curent (Rapid)
+  // Optimized: Fetch chat data with caching
   const fetchChatData = useCallback(async () => {
     if (!currentUserId) return
     try {
-      // Cerem un singur chat după ID
       const res = await fetch(`/api/chats?id=${id}&userId=${currentUserId}`, {
-        cache: 'no-store'
+        next: { revalidate: 60 } // Cache for 60 seconds
       })
       if (!res.ok) return
       const chats = await res.json()
       
-      // API-ul returnează un array, luăm primul element
       if (chats && chats.length > 0) {
         setChat({
           name: chats[0].name || "Chat",
@@ -35,64 +42,82 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     }
   }, [id, currentUserId])
 
-  // 2. Fetch mesaje cu NO-STORE cache
-  const fetchMessages = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/messages?chatId=${id}`, {
-        cache: 'no-store' // CRITIC: Forțează date proaspete de fiecare dată
-      })
-      if (!res.ok) {
-        setLoading(false)
-        return
-      }
-      const data = await res.json()
-      
-      const formattedMessages: Message[] = data.map((msg: any) => ({
-        id: msg.id,
-        content: msg.content,
-        timestamp: new Date(msg.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-        sender: {
-          id: msg.sender.id,
-          name: msg.sender.name,
-          avatar: msg.sender.avatar || undefined,
-        },
-      }))
-      setMessages(formattedMessages)
-    } catch (err) {
-      console.error('Failed to fetch messages', err)
-    } finally {
-      setLoading(false)
+  // Format real-time messages for the component
+  const formattedMessages: Message[] = realtimeMessages.map((msg) => {
+    // Ensure sender ID matches currentUserId for comparison
+    const senderId = msg.sender?.id || msg.senderId || ''
+    
+    return {
+      id: msg.id,
+      content: msg.deletedForEveryone ? '' : msg.content,
+      timestamp: msg.createdAt instanceof Date ? msg.createdAt.toISOString() : new Date(msg.createdAt).toISOString(),
+      sender: {
+        id: senderId, // Use the actual sender ID
+        name: msg.sender?.name || 'Unknown',
+        avatar: msg.sender?.avatar || undefined,
+      },
+      replyTo: msg.replyTo ? {
+        id: msg.replyTo.id,
+        content: msg.replyTo.content,
+        senderName: msg.replyTo.sender?.name || 'Unknown'
+      } : undefined,
+      reactions: msg.reactions?.map((r) => ({
+        emoji: r.emoji,
+        userId: r.userId
+      })) || [],
+      deletedForEveryone: msg.deletedForEveryone || false,
     }
-  }, [id])
+  })
 
-  // Funcție pentru actualizare instantă (Optimistic UI)
-  const addOptimisticMessage = (newMsg: Message) => {
-    setMessages((prev) => [...prev, newMsg])
-  }
-
-  // Inițializare
+  // Determine chat type on initial load
   useEffect(() => {
-    if (currentUserId) {
+    if (currentUserId && isInitialLoadRef.current) {
+      isInitialLoadRef.current = false
       fetchChatData()
-      fetchMessages()
-    }
-  }, [currentUserId, fetchChatData, fetchMessages])
-
-  // Polling rapid (3s) pentru timp real
-  useEffect(() => {
-    if (!currentUserId || !id) return
-    const interval = setInterval(() => {
-      if (!document.hidden) {
-        fetchMessages()
+      
+      // Try to determine if it's a group chat by checking messages endpoint
+      const checkChatType = async () => {
+        try {
+          // Try as single chat first
+          const res = await fetch(`/api/messages?chatId=${id}`)
+          if (res.ok) {
+            setIsGroupChat(false)
+            setLoading(false)
+          } else {
+            // Try as group chat
+            const groupRes = await fetch(`/api/messages?groupId=${id}`)
+            if (groupRes.ok) {
+              setIsGroupChat(true)
+              setLoading(false)
+            } else {
+              setLoading(false)
+            }
+          }
+        } catch (err) {
+          console.error('Failed to check chat type', err)
+          setLoading(false)
+        }
       }
-    }, 3000)
+      
+      checkChatType()
+    }
+  }, [currentUserId, id, fetchChatData])
 
-    return () => clearInterval(interval)
-  }, [currentUserId, id, fetchMessages])
+  // Optimistic update handler (for when user sends a message)
+  const addOptimisticMessage = useCallback((newMsg: Message) => {
+    // Real-time hook will handle this automatically, but we keep this for compatibility
+    window.dispatchEvent(new CustomEvent('messages:refresh'))
+  }, [])
 
-  if (loading && !currentUserId) {
+  // Update messages handler (for optimistic updates)
+  const updateMessages = useCallback((updatedMessages: Message[]) => {
+    // Real-time hook handles updates automatically
+    // This is kept for compatibility with ChatRoomClient
+  }, [])
+
+  if ((loading || messagesLoading) && !currentUserId) {
     return (
-      <div className="flex h-full items-center justify-center">
+      <div className="flex h-full items-center justify-center bg-[#0b141a]">
         <p className="text-muted-foreground">Loading...</p>
       </div>
     )
@@ -105,9 +130,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       id={id}
       title={chat?.name || "Chat"}
       imageUrl={chat?.avatar}
-      messages={messages}
+      messages={formattedMessages}
       currentUserId={currentUserId}
-      onOptimisticUpdate={addOptimisticMessage} // Trimitem funcția în jos
+      isGroupChat={isGroupChat}
+      onOptimisticUpdate={addOptimisticMessage}
+      onMessagesUpdate={updateMessages}
     />
   )
 }

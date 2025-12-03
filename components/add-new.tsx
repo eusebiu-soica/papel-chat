@@ -159,8 +159,7 @@ export default function AddNew() {
         // Update shareable link with actual room ID
         const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://papel.chat'
         setShareableLink(`${baseUrl}/join/room/${room.id}`)
-        // Dispatch refresh and optionally update UI
-        window.dispatchEvent(new CustomEvent('chats:refresh'))
+        // Real-time subscription will automatically update chats
         setOpen(false)
         return
       }
@@ -203,13 +202,19 @@ export default function AddNew() {
           console.error('Failed to copy link', err)
         }
         
-        window.dispatchEvent(new CustomEvent('chats:refresh'))
+        // Copy the link to clipboard automatically (already done above)
+        console.log(`Chat created! Link copied: ${finalLink}`)
         
-        // Show success message
-        alert(`Chat created! Link copied to clipboard: ${finalLink}\n\nPlease share this link (not the old one with roomId).`)
+        // Close modal immediately - real-time subscription will pick up the new chat
+        setOpen(false)
         
-        // Keep dialog open so user can see and copy the link
-        // setOpen(false)
+        // Reset form for next time
+        setRoomId(genId())
+        setCopied(false)
+        
+        // The real-time subscription will automatically detect the new chat
+        // No need to manually refresh - Firestore listener will update sidebar
+        
         return
       }
 
@@ -224,7 +229,7 @@ export default function AddNew() {
         // Update shareable link with actual room ID
         const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://papel.chat'
         setShareableLink(`${baseUrl}/join/temp/${room.id}`)
-        window.dispatchEvent(new CustomEvent('chats:refresh'))
+        // Real-time subscription will automatically update chats
         setOpen(false)
         return
       }

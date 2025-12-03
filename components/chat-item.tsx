@@ -25,7 +25,7 @@ type MenuItemType = {
   className?: string
 }
 
-const contextMenuItems: MenuItemType[] = [
+const getContextMenuItems = (chatId: string, router: any): MenuItemType[] => [
   {
     icon: <Pin size={17} />,
     label: "Pin Chat",
@@ -46,7 +46,24 @@ const contextMenuItems: MenuItemType[] = [
   {
     icon: <Trash size={17} />,
     label: "Delete Chat",
-    onClick: () => console.log("Delete chat clicked"),
+    onClick: async () => {
+      if (confirm("Are you sure you want to delete this chat? This action cannot be undone.")) {
+        try {
+          const res = await fetch(`/api/chats/${chatId}`, {
+            method: 'DELETE',
+          })
+          if (res.ok) {
+            // Chat will be removed from sidebar via real-time subscription
+            router.push('/')
+          } else {
+            alert('Failed to delete chat')
+          }
+        } catch (error) {
+          console.error('Error deleting chat:', error)
+          alert('Failed to delete chat')
+        }
+      }
+    },
     className: "text-destructive hover:bg-destructive/10",
   },
 ]
@@ -63,6 +80,8 @@ export default function ChatItem({ id, name, message, unreadCount, imageUrl }: C
   const pathname = usePathname()
   const router = useRouter()
   const isActive = pathname === `/chat/${id}`
+  
+  const contextMenuItems = getContextMenuItems(id, router)
 
   const handleClick = (e: React.MouseEvent) => {
     // Only navigate on left click, not right click
@@ -81,7 +100,7 @@ export default function ChatItem({ id, name, message, unreadCount, imageUrl }: C
             className={cn("p-3 hover:bg-muted/50 transition-colors cursor-pointer w-full", isActive && "bg-muted/70 border-l-2 border-indigo-500")}
             onClick={handleClick}
           >
-            <div className="flex items-center w-full">
+            <div className="flex items-center w-full gap-3">
               <ItemMedia>
                 <Avatar className="size-10">
                   <AvatarImage src={imageUrl} />

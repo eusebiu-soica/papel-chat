@@ -10,6 +10,8 @@ interface Chat {
   avatar?: string
   message: string
   lastMessageTime: Date
+  unreadCount?: number
+  isUnread?: boolean
 }
 
 interface ChatContextType {

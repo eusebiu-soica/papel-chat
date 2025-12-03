@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth, currentUser } from "@clerk/nextjs/server"
-import prisma from "@/lib/prisma"
+import { db } from "@/lib/db/provider"
 
 export async function GET(request: NextRequest) {
   const { userId: authUserId } = await auth()
@@ -14,32 +14,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
     
-    // Optimizare: Selectăm doar ID-ul pentru viteză
-    const dbUser = await prisma.user.findUnique({
-      where: { email: clerkUser.primaryEmailAddress?.emailAddress || '' },
-      select: { id: true }
-    })
+    // Get or create user in database
+    let dbUser = await db.getUserByEmail(clerkUser.primaryEmailAddress?.emailAddress || '')
     
     if (!dbUser) {
-      return NextResponse.json({ error: "User not found in database" }, { status: 400 })
+      // Create user if doesn't exist
+      dbUser = await db.createUser({
+        email: clerkUser.primaryEmailAddress?.emailAddress || '',
+        name: clerkUser.fullName || clerkUser.firstName || 'User',
+        avatar: clerkUser.imageUrl || undefined,
+      })
     }
     
     // --- CAZ SPECIAL: Fetch pentru un singur chat (Rapid) ---
     const chatId = request.nextUrl.searchParams.get("id")
 
     if (chatId) {
-      const chat = await prisma.chat.findUnique({
-        where: { id: chatId },
-        include: {
-          user1: { select: { id: true, name: true, avatar: true } },
-          user2: { select: { id: true, name: true, avatar: true } },
-          messages: {
-            orderBy: { createdAt: "desc" },
-            take: 1, // Luăm doar ultimul mesaj
-            select: { content: true, createdAt: true }
-          },
-        }
-      })
+      const chat = await db.getChatById(chatId)
 
       if (!chat) return NextResponse.json({ error: "Chat not found" }, { status: 404 })
 
@@ -58,8 +49,8 @@ export async function GET(request: NextRequest) {
         userId: otherUser?.id || null,
         name: otherUser?.name || "Unknown",
         avatar: otherUser?.avatar || null,
-        message: chat.messages[0]?.content || "No messages yet",
-        lastMessageTime: chat.messages[0]?.createdAt || chat.createdAt,
+        message: chat.messages?.[0]?.content || "No messages yet",
+        lastMessageTime: chat.messages?.[0]?.createdAt || chat.createdAt,
       }])
     }
     // -------------------------------------------------------
@@ -67,25 +58,9 @@ export async function GET(request: NextRequest) {
     // Logică pentru lista completă de chat-uri (Sidebar)
     const userId = dbUser.id
 
-    const chats = await prisma.chat.findMany({
-      where: {
-        OR: [{ userId1: userId }, { userId2: userId }],
-      },
-      include: {
-        user1: { select: { id: true, name: true, avatar: true } },
-        user2: { select: { id: true, name: true, avatar: true } },
-        messages: {
-          orderBy: { createdAt: "desc" },
-          take: 1,
-          select: { content: true, createdAt: true }
-        },
-      },
-      orderBy: {
-        updatedAt: "desc",
-      },
-    })
+    const chats = await db.getChatsByUserId(userId)
 
-    const formattedChats = chats.map((chat: any) => {
+    const formattedChats = chats.map((chat) => {
       let otherUser
       if (!chat.userId2) {
         otherUser = { id: null, name: "Waiting for user...", avatar: null }
@@ -98,8 +73,8 @@ export async function GET(request: NextRequest) {
         userId: otherUser?.id || null,
         name: otherUser?.name || "Unknown",
         avatar: otherUser?.avatar || null,
-        message: chat.messages[0]?.content || "No messages yet",
-        lastMessageTime: chat.messages[0]?.createdAt || chat.createdAt,
+        message: chat.messages?.[0]?.content || "No messages yet",
+        lastMessageTime: chat.messages?.[0]?.createdAt || chat.createdAt,
       }
     })
 
@@ -118,20 +93,25 @@ export async function POST(request: NextRequest) {
     const { userId1, userId2, isPending } = await request.json()
 
     const clerkUser = await currentUser()
-    const dbUser = await prisma.user.findUnique({
-      where: { email: clerkUser?.primaryEmailAddress?.emailAddress || '' }
-    })
-
-    if (!dbUser) return NextResponse.json({ error: "User not found" }, { status: 400 })
+    let dbUser = await db.getUserByEmail(clerkUser?.primaryEmailAddress?.emailAddress || '')
+    
+    if (!dbUser) {
+      // Create user if doesn't exist
+      dbUser = await db.createUser({
+        email: clerkUser?.primaryEmailAddress?.emailAddress || '',
+        name: clerkUser?.fullName || clerkUser?.firstName || 'User',
+        avatar: clerkUser?.imageUrl || undefined,
+      })
+    }
 
     // CAZ 1: Creare chat "Pending" (Link Share)
     if (isPending) {
-        const chat = await prisma.chat.create({
-            data: {
-                userId1: dbUser.id,
-                // userId2 este opțional, deci îl lăsăm null
-            }
+        console.log('[API] Creating pending chat with userId1:', dbUser.id)
+        const chat = await db.createChat({
+            userId1: dbUser.id,
+            userId2: null,
         })
+        console.log('[API] Created chat:', chat.id, 'userId1:', chat.userId1, 'userId2:', chat.userId2)
         return NextResponse.json({ ...chat, isPending: true }, { status: 201 })
     }
 
@@ -140,20 +120,18 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Both user IDs required" }, { status: 400 })
     }
 
-    // Verificăm dacă există deja
-    const existingChat = await prisma.chat.findFirst({
-        where: {
-            OR: [
-                { userId1, userId2 },
-                { userId1: userId2, userId2: userId1 }
-            ]
-        }
-    })
+    // Verificăm dacă există deja (check both directions)
+    const allChats = await db.getChatsByUserId(userId1)
+    const existingChat = allChats.find(
+      chat => (chat.userId1 === userId1 && chat.userId2 === userId2) ||
+               (chat.userId1 === userId2 && chat.userId2 === userId1)
+    )
 
     if (existingChat) return NextResponse.json(existingChat)
 
-    const chat = await prisma.chat.create({
-        data: { userId1, userId2 }
+    const chat = await db.createChat({
+        userId1, 
+        userId2 
     })
 
     return NextResponse.json(chat, { status: 201 })

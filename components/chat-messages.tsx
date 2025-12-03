@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useCallback } from "react"
 import { ChatBubble } from "./chat-bubble"
 import { cn } from "@/lib/utils"
 
@@ -13,12 +13,26 @@ export interface Message {
     name: string
     avatar?: string
   }
+  replyTo?: {
+    id: string
+    content: string
+    senderName: string
+  }
+  reactions?: Array<{
+    emoji: string
+    userId: string
+  }>
+  deletedForEveryone?: boolean
 }
 
 interface ChatMessagesProps {
   messages: Message[]
   currentUserId: string
   className?: string
+  isGroupChat?: boolean
+  onReply?: (messageId: string) => void
+  onReact?: (messageId: string, emoji: string) => void
+  onDelete?: (messageId: string) => void
 }
 
 function formatDateLabel(date: Date) {
@@ -39,99 +53,151 @@ function formatDateLabel(date: Date) {
 
   if (isYesterday) return "Yesterday"
 
-  return date.toLocaleDateString()
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined })
 }
 
-export function ChatMessages({ messages, currentUserId, className }: ChatMessagesProps) {
+export function ChatMessages({ 
+  messages, 
+  currentUserId, 
+  className,
+  isGroupChat = false,
+  onReply,
+  onReact,
+  onDelete
+}: ChatMessagesProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
-  const userScrolledUpRef = useRef(false)
-  const [scrolledUp, setScrolledUp] = useState(false)
+  const isUserScrollingRef = useRef(false)
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const wasAtBottomRef = useRef(true)
+  const prevMessagesLengthRef = useRef(messages.length)
 
+  // Check if user is near bottom (within 100px)
+  const isNearBottom = useCallback(() => {
+    const el = containerRef.current
+    if (!el) return true
+    const { scrollTop, scrollHeight, clientHeight } = el
+    const distanceFromBottom = scrollHeight - (scrollTop + clientHeight)
+    return distanceFromBottom < 100
+  }, [])
+
+  // Handle scroll events
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
 
-    const onScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = el
-      const distanceFromBottom = scrollHeight - (scrollTop + clientHeight)
-      // consider near-bottom as within 50px
-      const isScrolledUp = distanceFromBottom > 50
-      userScrolledUpRef.current = isScrolledUp
-      setScrolledUp(isScrolledUp)
+    const handleScroll = () => {
+      wasAtBottomRef.current = isNearBottom()
+      
+      // Clear existing timeout
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current)
+      }
+      
+      // Mark as user scrolling
+      isUserScrollingRef.current = true
+      
+      // Reset after 150ms of no scrolling
+      scrollTimeoutRef.current = setTimeout(() => {
+        isUserScrollingRef.current = false
+      }, 150)
     }
 
-    el.addEventListener("scroll", onScroll, { passive: true })
-    // initialize
-    onScroll()
+    el.addEventListener("scroll", handleScroll, { passive: true })
+    return () => {
+      el.removeEventListener("scroll", handleScroll)
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current)
+      }
+    }
+  }, [isNearBottom])
 
-    return () => el.removeEventListener("scroll", onScroll)
-  }, [])
-
+  // Auto-scroll to bottom only if:
+  // 1. User was at bottom before new message
+  // 2. User is not actively scrolling
+  // 3. New messages were added (not just re-render)
   useEffect(() => {
-    // Auto-scroll only if user is at (or near) the bottom
-    if (!userScrolledUpRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    const visibleCount = messages.filter(msg => !msg.deletedForEveryone).length
+    const messagesAdded = visibleCount > prevMessagesLengthRef.current
+    prevMessagesLengthRef.current = visibleCount
+
+    if (messagesAdded && wasAtBottomRef.current && !isUserScrollingRef.current) {
+      // Small delay to ensure DOM is updated
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+      }, 50)
     }
   }, [messages])
 
-  if (messages.length === 0) {
+  // Initial scroll to bottom
+  useEffect(() => {
+    const visibleMessages = messages.filter(msg => !msg.deletedForEveryone)
+    if (visibleMessages.length > 0 && containerRef.current) {
+      const el = containerRef.current
+      el.scrollTop = el.scrollHeight
+    }
+  }, []) // Only on mount
+
+  const visibleMessages = messages.filter(msg => !msg.deletedForEveryone)
+
+  if (visibleMessages.length === 0) {
     return (
-      <div className={cn("h-full w-full flex items-center justify-center px-6 py-6", className)}>
-        <div className="text-muted-foreground">No messages yet. Start the conversation!</div>
+      <div className={cn("h-full w-full flex items-center justify-center px-4 py-6", className)}>
+        <div className="text-muted-foreground text-sm">No messages yet. Start the conversation!</div>
       </div>
     )
   }
 
-  // Helper to parse timestamp to Date, with fallback to now
   const toDate = (ts: string) => {
-    const d = new Date(ts)
-    return isNaN(d.getTime()) ? new Date() : d
+    try {
+      const d = new Date(ts)
+      return isNaN(d.getTime()) ? new Date() : d
+    } catch {
+      return new Date()
+    }
   }
 
   return (
-    <div ref={containerRef} className={cn("h-full w-full relative overflow-y-auto px-6 py-6", className)}>
-      <div className="flex flex-col gap-4">
-        {messages.map((message, idx) => {
-          const msgDate = toDate(message.timestamp)
-          const prev = messages[idx - 1]
-          const prevDate = prev ? toDate(prev.timestamp) : null
-          const showSeparator = !prevDate || msgDate.toDateString() !== prevDate.toDateString()
+    <div 
+      ref={containerRef} 
+      className={cn(
+        "h-full w-full relative overflow-y-auto",
+        "bg-background",
+        className
+      )}
+    >
+      <div className="flex flex-col gap-0.5 px-2 py-4">
+        {visibleMessages.map((message, idx) => {
+            const msgDate = toDate(message.timestamp)
+            const prev = visibleMessages[idx - 1]
+            const prevDate = prev ? toDate(prev.timestamp) : null
+            const showSeparator = !prevDate || msgDate.toDateString() !== prevDate.toDateString()
 
-          return (
-            <div key={message.id}>
-              {showSeparator && (
-                <div className="flex items-center justify-center my-4">
-                  <div className="px-3 py-1 rounded-full text-xs bg-slate-200/40 text-slate-800 border border-slate-200/30">
-                    {formatDateLabel(msgDate)}
+            return (
+              <div key={message.id}>
+                {showSeparator && (
+                  <div className="flex items-center justify-center my-3">
+                    <div className="px-3 py-1 rounded-full text-xs bg-muted/80 text-muted-foreground backdrop-blur-sm">
+                      {formatDateLabel(msgDate)}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              <ChatBubble
-                content={message.content}
-                timestamp={message.timestamp}
-                sender={message.sender}
-                isOwn={message.sender.id === currentUserId}
-              />
-            </div>
-          )
-        })}
+                <ChatBubble
+                  message={message}
+                  isOwn={message.sender.id === currentUserId}
+                  isGroupChat={isGroupChat}
+                  currentUserId={currentUserId}
+                  onReply={onReply}
+                  onReact={onReact}
+                  onDelete={onDelete}
+                />
+              </div>
+            )
+          })}
 
-        <div ref={messagesEndRef} />
+        <div ref={messagesEndRef} className="h-1" />
       </div>
-        {scrolledUp && (
-          <button
-            aria-label="Jump to latest"
-            onClick={() => {
-              messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-              setScrolledUp(false)
-            }}
-            className="absolute right-6 bottom-6 z-10 bg-indigo-600 text-white px-3 py-2 rounded-full shadow-md text-sm"
-          >
-            Jump to latest
-          </button>
-        )}
     </div>
   )
 }

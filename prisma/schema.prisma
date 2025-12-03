@@ -18,26 +18,27 @@ model User {
   updatedAt DateTime @updatedAt
 
   // Relations
-  sentMessages     Message[]     @relation("SentMessages")
-  chatsAsUser1     Chat[]        @relation("ChatUser1")
-  chatsAsUser2     Chat[]        @relation("ChatUser2")
+  sentMessages     Message[]         @relation("SentMessages")
+  chatsAsUser1     Chat[]            @relation("ChatUser1")
+  chatsAsUser2     Chat[]            @relation("ChatUser2")
   groupMemberships GroupMember[]
   rooms            Room[]
-  blockedUsers     BlockedUser[] @relation("BlockedBy")
-  blockedByUsers   BlockedUser[] @relation("Blocks")
+  blockedUsers     BlockedUser[]     @relation("BlockedBy")
+  blockedByUsers   BlockedUser[]     @relation("Blocks")
+  messageReactions MessageReaction[]
 
   @@index([email])
   @@map("users")
 }
 
 model Chat {
-  id        String   @id @default(uuid())
-  userId1   String
-  userId2   String? 
-  
-  user1     User     @relation("ChatUser1", fields: [userId1], references: [id], onDelete: Cascade)
-  user2     User?    @relation("ChatUser2", fields: [userId2], references: [id], onDelete: Cascade)
-  
+  id      String  @id @default(uuid())
+  userId1 String
+  userId2 String?
+
+  user1 User  @relation("ChatUser1", fields: [userId1], references: [id], onDelete: Cascade)
+  user2 User? @relation("ChatUser2", fields: [userId2], references: [id], onDelete: Cascade)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -49,24 +50,51 @@ model Chat {
 }
 
 model Message {
-  id        String   @id @default(cuid())
-  content   String
-  senderId  String
-  
-  chatId    String?
-  groupId   String?
-  
+  id       String @id @default(cuid())
+  content  String
+  senderId String
+
+  chatId  String?
+  groupId String?
+
+  // Reply functionality
+  replyToId String?
+  replyTo   Message?  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies   Message[] @relation("MessageReplies")
+
+  // Delete for everyone
+  deletedForEveryone Boolean   @default(false)
+  deletedAt          DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  sender    User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
-  chat      Chat?    @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  group     Group?   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  sender User   @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  chat   Chat?  @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  group  Group? @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
-  @@index([chatId, createdAt]) 
+  // Reactions
+  reactions MessageReaction[]
+
+  @@index([chatId, createdAt])
   @@index([groupId, createdAt])
   @@index([senderId])
+  @@index([replyToId])
   @@map("messages")
+}
+
+model MessageReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emoji     String // e.g., "👍", "❤️", "😂"
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+  @@map("message_reactions")
 }
 
 model Group {
