@@ -1,8 +1,9 @@
 "use client"
 
-import React, { useState, useCallback } from "react"
+import React, { useState, useCallback, useEffect } from "react"
 import { ChatRoom } from "./chat-room"
 import type { Message } from "./chat-messages"
+import { toast } from 'sonner'
 
 interface ChatRoomClientProps {
   id: string
@@ -81,6 +82,7 @@ export default function ChatRoomClient({
         if (onMessagesUpdate) {
           onMessagesUpdate(messages.filter(m => m.id !== tempId))
         }
+        toast.error('Failed to send message')
         return
       }
 
@@ -118,6 +120,7 @@ export default function ChatRoomClient({
       if (onMessagesUpdate) {
         onMessagesUpdate(messages.filter(m => m.id !== tempId))
       }
+      toast.error('Error sending message')
     }
   }, [id, currentUserId, messages, isGroupChat, onOptimisticUpdate, onMessagesUpdate])
 
@@ -169,6 +172,7 @@ export default function ChatRoomClient({
       if (res.ok) {
         // Refresh to get server state (for other users' reactions)
         window.dispatchEvent(new CustomEvent('messages:refresh'))
+        toast.success('Reaction updated')
       } else {
         // Revert on error
         if (onMessagesUpdate) {
@@ -181,6 +185,7 @@ export default function ChatRoomClient({
             )
           }
         }
+        toast.error('Failed to update reaction')
       }
     } catch (err) {
       console.error('Error reacting to message', err)
@@ -195,6 +200,7 @@ export default function ChatRoomClient({
           )
         }
       }
+      toast.error('Error reacting to message')
     }
   }, [messages, currentUserId, onMessagesUpdate])
 
@@ -219,6 +225,7 @@ export default function ChatRoomClient({
       
       if (res.ok) {
         // Real-time subscriptions will automatically update messages and chats
+        toast.success('Message deleted')
       } else {
         // Revert on error
         if (onMessagesUpdate) {
@@ -231,6 +238,7 @@ export default function ChatRoomClient({
             )
           }
         }
+        toast.error('Failed to delete message')
       }
     } catch (err) {
       console.error('Error deleting message', err)
@@ -245,8 +253,41 @@ export default function ChatRoomClient({
           )
         }
       }
+      toast.error('Error deleting message')
     }
   }, [messages, onMessagesUpdate])
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      try {
+        const detail = (e as CustomEvent)?.detail
+        if (!detail) return
+        const msg: any = detail
+        if (!msg) return
+        if (msg.sender?.id === currentUserId) return
+        // determine chat id
+        const messageChatId = msg.chatId ?? msg.groupId ?? msg.chat?.id ?? msg.group?.id
+        if (!messageChatId) return
+        // if user is not currently in that chat, show a toast
+        if (!window.location.pathname.includes(String(messageChatId))) {
+          const text = msg.content?.slice(0, 120) ?? 'New message'
+          toast(`${msg.sender?.name ?? 'Someone'}: ${text}`, {
+            action: {
+              label: 'Open',
+              onClick: () => {
+                window.location.href = `/chat/${messageChatId}`
+              }
+            }
+          })
+        }
+      } catch (err) {
+        console.error('Toast handler error', err)
+      }
+    }
+
+    window.addEventListener('messages:received', handler as EventListener)
+    return () => window.removeEventListener('messages:received', handler as EventListener)
+  }, [currentUserId, id])
 
   return (
     <ChatRoom

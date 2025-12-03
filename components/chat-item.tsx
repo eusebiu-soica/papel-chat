@@ -79,7 +79,8 @@ interface ChatItemProps {
 export default function ChatItem({ id, name, message, unreadCount, imageUrl }: ChatItemProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const isActive = pathname === `/chat/${id}`
+  // consider nested routes or trailing slashes; handle if pathname contains the chat id
+  const isActive = !!pathname && pathname.includes(`/chat/${id}`)
   
   const contextMenuItems = getContextMenuItems(id, router)
 
@@ -102,7 +103,7 @@ export default function ChatItem({ id, name, message, unreadCount, imageUrl }: C
           >
             <div className="flex items-center w-full gap-3">
               <ItemMedia>
-                <Avatar className="size-10">
+                <Avatar className="h-10 w-10">
                   <AvatarImage src={imageUrl} />
                   <AvatarFallback>{name.charAt(0).toUpperCase()}</AvatarFallback>
                 </Avatar>
@@ -111,7 +112,7 @@ export default function ChatItem({ id, name, message, unreadCount, imageUrl }: C
                 <ItemTitle>{name}</ItemTitle>
                 <ItemDescription className="line-clamp-1">{message}</ItemDescription>
               </ItemContent>
-              {(unreadCount ?? 0) > 0 && (
+              {(unreadCount ?? 0) > 0 && !isActive && (
                 <ItemActions>
                   <Badge variant="default">{unreadCount}</Badge>
                 </ItemActions>

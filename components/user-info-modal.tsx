@@ -1,11 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import React, { useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { AlertCircle, Ban, Flag, MessageSquare, Phone, Video } from "lucide-react"
+import { Ban, Flag, Share2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { toast } from 'sonner'
 
 interface UserInfoModalProps {
   name: string
@@ -17,36 +18,37 @@ interface UserInfoModalProps {
 export default function UserInfoModal({ name, avatar, isOpen, onOpenChange }: UserInfoModalProps) {
   const [activeTab, setActiveTab] = useState<"info" | "actions">("info")
 
-  const actionItems = [
-    {
-      icon: <Phone className="h-5 w-5" />,
-      label: "Voice Call",
-      onClick: () => console.log("Voice call"),
-    },
-    {
-      icon: <Video className="h-5 w-5" />,
-      label: "Video Call",
-      onClick: () => console.log("Video call"),
-    },
-    {
-      icon: <Ban className="h-5 w-5" />,
-      label: "Block",
-      destructive: true,
-      onClick: () => console.log("Block user"),
-    },
-    {
-      icon: <AlertCircle className="h-5 w-5" />,
-      label: "Report",
-      destructive: true,
-      onClick: () => console.log("Report user"),
-    },
-    {
-      icon: <Flag className="h-5 w-5" />,
-      label: "Restrict",
-      destructive: true,
-      onClick: () => console.log("Restrict user"),
-    },
-  ]
+  const handleBlock = () => {
+    if (confirm(`Block ${name}? This will prevent them from messaging you.`)) {
+      // TODO: call backend to block user
+      toast.success(`${name} blocked`)
+      onOpenChange(false)
+    }
+  }
+
+  const handleReport = () => {
+    if (confirm(`Report ${name}?`)) {
+      // TODO: call backend to report user
+      toast.success(`Reported ${name}`)
+      onOpenChange(false)
+    }
+  }
+
+  const handleShare = async () => {
+    try {
+      const shareUrl = window.location.href
+      if (navigator.share) {
+        await navigator.share({ title: `Chat with ${name}`, url: shareUrl })
+      } else {
+        await navigator.clipboard.writeText(shareUrl)
+        toast.success('Chat link copied to clipboard')
+      }
+      onOpenChange(false)
+    } catch (err) {
+      console.error('Share failed', err)
+      toast.error('Could not share link')
+    }
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -98,20 +100,18 @@ export default function UserInfoModal({ name, avatar, isOpen, onOpenChange }: Us
 
           {activeTab === "actions" && (
             <div className="space-y-2">
-              {actionItems.map((item, index) => (
-                <Button
-                  key={index}
-                  variant="ghost"
-                  className={cn(
-                    "w-full justify-start gap-3 hover:bg-muted/50",
-                    item.destructive && "text-destructive hover:text-destructive hover:bg-destructive/5"
-                  )}
-                  onClick={item.onClick}
-                >
-                  {item.icon}
-                  <span>{item.label}</span>
-                </Button>
-              ))}
+              <Button variant="ghost" className="w-full justify-start gap-3 hover:bg-muted/50" onClick={handleBlock}>
+                <Ban className="h-5 w-5" />
+                <span>Block</span>
+              </Button>
+              <Button variant="ghost" className="w-full justify-start gap-3 hover:bg-muted/50" onClick={handleReport}>
+                <Flag className="h-5 w-5" />
+                <span>Report</span>
+              </Button>
+              <Button variant="ghost" className="w-full justify-start gap-3 hover:bg-muted/50" onClick={handleShare}>
+                <Share2 className="h-5 w-5" />
+                <span>Share</span>
+              </Button>
             </div>
           )}
         </div>

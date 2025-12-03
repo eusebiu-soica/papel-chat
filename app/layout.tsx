@@ -4,6 +4,7 @@ import "./globals.css";
 import { ClerkProvider } from "@clerk/nextjs";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ChatProvider } from "@/lib/context/chat-context";
+import { Toaster } from 'sonner'
 import Sidebar from "@/components/sidebar";
 import SectionTitle from "@/components/sidebar-header"
 import {
@@ -46,6 +47,7 @@ export default function RootLayout({
             disableTransitionOnChange
           >
             <ChatProvider>
+              <Toaster position="top-right" />
               {children}
             </ChatProvider>
           </ThemeProvider>
