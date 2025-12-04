@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth, currentUser } from "@clerk/nextjs/server"
-import prisma from "@/lib/prisma"
+import { db } from "@/lib/db/provider"
+import { getOrCreateDbUser } from "@/lib/server/get-or-create-db-user"
 
 export async function POST(
   request: NextRequest,
@@ -10,102 +11,61 @@ export async function POST(
     const { userId: authUserId } = await auth()
     const { id } = await params
     
-    if (!authUserId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
+    if (!authUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-    // Get Clerk user to find database user
     const clerkUser = await currentUser()
     if (!clerkUser) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
+    const dbUser = await getOrCreateDbUser(clerkUser)
     
-    // Find database user by email
-    const dbUser = await prisma.user.findUnique({
-      where: { email: clerkUser.primaryEmailAddress?.emailAddress || '' },
-    })
-    
-    if (!dbUser) {
-      return NextResponse.json({ error: "User not found in database" }, { status: 400 })
-    }
-    
-    // Find the chat
-    const chat = await prisma.chat.findUnique({
-      where: { id },
-      include: {
-        user1: true,
-        user2: true,
-      },
-    })
+    // 1. Cautam chat-ul
+    const chat = await db.getChatById(id)
 
     if (!chat) {
-      console.error(`Chat not found with ID: ${id}`)
+      console.error(`Chat not found: ${id}`)
       return NextResponse.json({ 
         error: "Chat not found",
-        details: `No chat exists with ID: ${id}. Please check the link and try again.`
+        details: `Chat with ID "${id}" does not exist. The link may be invalid or the chat may have been deleted.`
       }, { status: 404 })
     }
 
-    // Check if chat is pending (userId2 is the pending user)
-    const pendingUser = await prisma.user.findFirst({
-      where: { email: 'pending@system.local' },
-    })
+    // 2. Logica de Join
     
-    if (pendingUser && chat.userId2 === pendingUser.id && chat.userId1 !== dbUser.id) {
-      // Update the pending chat with the joining user
-      const updatedChat = await prisma.chat.update({
-        where: { id },
-        data: {
-          userId2: dbUser.id,
-        },
-        include: {
-          user1: true,
-          user2: true,
-        },
-      })
-      
-      return NextResponse.json(updatedChat, { status: 200 })
+    // Daca userul este deja in chat (e creatorul sau a intrat deja)
+    if (chat.userId1 === dbUser.id || chat.userId2 === dbUser.id) {
+        return NextResponse.json(chat, { status: 200 })
     }
 
-    // If chat already exists with both users, return it
-    if ((chat.userId1 === dbUser.id || chat.userId2 === dbUser.id)) {
-      return NextResponse.json(chat, { status: 200 })
+    // Daca chatul este "in asteptare" (userId2 e null)
+    if (chat.userId2 === null) {
+        const updatedChat = await db.updateChat(id, { userId2: dbUser.id })
+        return NextResponse.json(updatedChat, { status: 200 })
     }
 
-    // If user is trying to join a chat they're not part of, create a new chat
-    // This handles the case where someone shares a link to an existing chat
-    const existingChat = await prisma.chat.findFirst({
-      where: {
-        OR: [
-          { userId1: chat.userId1, userId2: dbUser.id },
-          { userId1: dbUser.id, userId2: chat.userId1 },
-        ],
-      },
-    })
+    // Daca chatul e plin (are deja 2 useri diferiti de cel curent)
+    // Verificam daca exista deja un chat privat intre cei doi
+    const allChats = await db.getChatsByUserId(dbUser.id)
+    const existingChat = allChats.find(
+      c => (c.userId1 === chat.userId1 && c.userId2 === dbUser.id) ||
+           (c.userId1 === dbUser.id && c.userId2 === chat.userId1)
+    )
 
-    if (existingChat) {
-      return NextResponse.json(existingChat, { status: 200 })
-    }
+    if (existingChat) return NextResponse.json(existingChat, { status: 200 })
 
-      // Create a new chat between the original creator and the joining user
-      const newChat = await prisma.chat.create({
-        data: {
-          userId1: chat.userId1,
-          userId2: dbUser.id,
-        },
-      include: {
-        user1: true,
-        user2: true,
-      },
+    // Altfel, cream un chat nou
+    const newChat = await db.createChat({
+        userId1: chat.userId1, // Creatorul original
+        userId2: dbUser.id     // Cel care a dat click
     })
 
     return NextResponse.json(newChat, { status: 201 })
+
   } catch (error: any) {
     console.error("Error joining chat:", error)
     return NextResponse.json({ 
-      error: "Failed to join chat",
-      details: error?.message || 'Unknown error'
+      error: "Failed to join",
+      details: error?.message || "An unexpected error occurred"
     }, { status: 500 })
   }
 }
-

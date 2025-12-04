@@ -40,26 +40,26 @@ export default function AccountMenu() {
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="cursor-pointer">
-                    <Menu />
+                <Button variant="ghost" size="icon" className="cursor-pointer h-9 w-9 sm:h-10 sm:w-10 touch-manipulation active:scale-95 transition-transform">
+                    <Menu className="h-4 w-4 sm:h-5 sm:w-5" />
                 </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="shadow-lg" align="start">
+            <DropdownMenuContent className="shadow-lg w-[280px] sm:w-[300px]" align="start">
 
                 <DropdownMenuItem 
-                    className="cursor-pointer data-[highlighted]:bg-muted/50"
+                    className="cursor-pointer data-[highlighted]:bg-muted/50 touch-manipulation"
                     onClick={handleUserProfile}
                 >
                     <Item className="p-0 gap-2">
                         <ItemMedia>
-                            <Avatar>
+                            <Avatar className="h-9 w-9 sm:h-10 sm:w-10">
                                 <AvatarImage src={user?.imageUrl} alt={user?.fullName || 'User profile picture'} />
-                                <AvatarFallback>{userInitials}</AvatarFallback>
+                                <AvatarFallback className="text-xs sm:text-sm">{userInitials}</AvatarFallback>
                             </Avatar>
                         </ItemMedia>
-                        <ItemContent className="gap-0">
-                            <ItemTitle>{user?.fullName || user?.firstName || 'User'}</ItemTitle>
-                            <ItemDescription className="text-xs">
+                        <ItemContent className="gap-0 min-w-0">
+                            <ItemTitle className="text-sm sm:text-base truncate">{user?.fullName || user?.firstName || 'User'}</ItemTitle>
+                            <ItemDescription className="text-xs truncate">
                                 {user?.primaryEmailAddress?.emailAddress || 'No email'}
                             </ItemDescription>
                         </ItemContent>
@@ -68,21 +68,23 @@ export default function AccountMenu() {
                 <DropdownMenuSeparator />
 
                 <DropdownMenuItem 
-                    className="gap-4 p-2 font-medium data-[highlighted]:bg-muted/50 cursor-pointer"
+                    className="gap-3 sm:gap-4 p-2.5 sm:p-2 font-medium data-[highlighted]:bg-muted/50 cursor-pointer touch-manipulation min-h-[44px]"
                     onClick={handleSettings}
                 >
-                    <Settings className="text-foreground" size={17} /> Settings
+                    <Settings className="text-foreground h-4 w-4 sm:h-[17px] sm:w-[17px]" /> 
+                    <span className="text-sm sm:text-base">Settings</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem className="gap-4 p-2 font-medium data-[highlighted]:bg-muted/50 cursor-pointer">
+                <DropdownMenuItem className="gap-3 sm:gap-4 p-2.5 sm:p-2 font-medium data-[highlighted]:bg-muted/50 cursor-pointer touch-manipulation min-h-[44px]">
                     <ModeToggle />
                 </DropdownMenuItem>
                 <DropdownMenuItem 
-                    className="gap-4 p-2 font-medium data-[highlighted]:bg-muted/50 cursor-pointer"
+                    className="gap-3 sm:gap-4 p-2.5 sm:p-2 font-medium data-[highlighted]:bg-muted/50 cursor-pointer touch-manipulation min-h-[44px]"
                     onClick={handleSignOut}
                 >
-                    <LogOut className="text-foreground" size={17} /> Log out
+                    <LogOut className="text-foreground h-4 w-4 sm:h-[17px] sm:w-[17px]" /> 
+                    <span className="text-sm sm:text-base">Log out</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem disabled className="gap-4 p-2 text-center justify-center">
+                <DropdownMenuItem disabled className="gap-4 p-2 text-center justify-center text-xs sm:text-sm">
                     Papel Chat v1.2.34
                 </DropdownMenuItem>
             </DropdownMenuContent>

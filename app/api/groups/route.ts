@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import prisma from "@/lib/prisma"
-import { v4 as uuidv4 } from "uuid"
+import { db } from "@/lib/db/provider"
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,25 +9,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "userId is required" }, { status: 400 })
     }
 
-    const groups = await prisma.group.findMany({
-      where: {
-        members: {
-          some: {
-            userId,
-          },
-        },
-      },
-      include: {
-        members: true,
-        messages: {
-          orderBy: { createdAt: "desc" },
-          take: 1,
-        },
-      },
-      orderBy: {
-        updatedAt: "desc",
-      },
-    })
+    const groups = await db.getGroupsByUserId(userId)
 
     return NextResponse.json(groups)
   } catch (error) {
@@ -45,22 +26,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "name and createdBy are required" }, { status: 400 })
     }
 
-    const group = await prisma.group.create({
-      data: {
-        id: uuidv4(),
-        name,
-        avatar,
-        createdBy,
-        members: {
-          create: [
-            { userId: createdBy },
-            ...(memberIds || []).map((userId: string) => ({ userId })),
-          ],
-        },
-      },
-      include: {
-        members: true,
-      },
+    const group = await db.createGroup({
+      name,
+      avatar,
+      createdBy,
+      memberIds: memberIds && Array.isArray(memberIds) ? memberIds : [],
     })
 
     return NextResponse.json(group, { status: 201 })

@@ -25,7 +25,7 @@ type MenuItemType = {
   className?: string
 }
 
-const contextMenuItems: MenuItemType[] = [
+const getContextMenuItems = (chatId: string, router: any): MenuItemType[] => [
   {
     icon: <Pin size={17} />,
     label: "Pin Chat",
@@ -46,7 +46,24 @@ const contextMenuItems: MenuItemType[] = [
   {
     icon: <Trash size={17} />,
     label: "Delete Chat",
-    onClick: () => console.log("Delete chat clicked"),
+    onClick: async () => {
+      if (confirm("Are you sure you want to delete this chat? This action cannot be undone.")) {
+        try {
+          const res = await fetch(`/api/chats/${chatId}`, {
+            method: 'DELETE',
+          })
+          if (res.ok) {
+            // Chat will be removed from sidebar via real-time subscription
+            router.push('/')
+          } else {
+            alert('Failed to delete chat')
+          }
+        } catch (error) {
+          console.error('Error deleting chat:', error)
+          alert('Failed to delete chat')
+        }
+      }
+    },
     className: "text-destructive hover:bg-destructive/10",
   },
 ]
@@ -57,12 +74,16 @@ interface ChatItemProps {
   message: string
   unreadCount?: number
   imageUrl?: string
+  isLast?: boolean
 }
 
-export default function ChatItem({ id, name, message, unreadCount, imageUrl }: ChatItemProps) {
+export default function ChatItem({ id, name, message, unreadCount, imageUrl, isLast }: ChatItemProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const isActive = pathname === `/chat/${id}`
+  // consider nested routes or trailing slashes; handle if pathname contains the chat id
+  const isActive = !!pathname && pathname.includes(`/chat/${id}`)
+  
+  const contextMenuItems = getContextMenuItems(id, router)
 
   const handleClick = (e: React.MouseEvent) => {
     // Only navigate on left click, not right click
@@ -73,28 +94,31 @@ export default function ChatItem({ id, name, message, unreadCount, imageUrl }: C
   }
 
   return (
-    <div className="flex w-full max-w-xl flex-col gap-0">
+    <div className={cn("flex w-full max-w-xl flex-col gap-0", !isLast && "border-b border-border/50")}>
       <ContextMenu>
         <ContextMenuTrigger className="w-full">
           <Item 
             variant="default" 
-            className={cn("p-3 hover:bg-muted/50 transition-colors cursor-pointer w-full", isActive && "bg-muted/70 border-l-2 border-indigo-500")}
+            className={cn(
+              "p-2 sm:p-3 hover:bg-muted/50 active:bg-muted/70 transition-colors cursor-pointer w-full touch-manipulation",
+              isActive && "bg-muted/70 border-l-2 border-indigo-500"
+            )}
             onClick={handleClick}
           >
-            <div className="flex items-center w-full">
-              <ItemMedia>
-                <Avatar className="size-10">
+            <div className="flex items-center w-full gap-2 sm:gap-3 min-w-0">
+              <ItemMedia className="flex-shrink-0">
+                <Avatar className="h-9 w-9 sm:h-10 sm:w-10">
                   <AvatarImage src={imageUrl} />
-                  <AvatarFallback>{name.charAt(0).toUpperCase()}</AvatarFallback>
+                  <AvatarFallback className="text-xs sm:text-sm">{name.charAt(0).toUpperCase()}</AvatarFallback>
                 </Avatar>
               </ItemMedia>
-              <ItemContent>
-                <ItemTitle>{name}</ItemTitle>
-                <ItemDescription className="line-clamp-1">{message}</ItemDescription>
+              <ItemContent className="min-w-0 flex-1">
+                <ItemTitle className="text-sm sm:text-base truncate">{name}</ItemTitle>
+                <ItemDescription className="line-clamp-1 text-xs sm:text-sm">{message}</ItemDescription>
               </ItemContent>
-              {(unreadCount ?? 0) > 0 && (
-                <ItemActions>
-                  <Badge variant="default">{unreadCount}</Badge>
+              {(unreadCount ?? 0) > 0 && !isActive && (
+                <ItemActions className="flex-shrink-0">
+                  <Badge variant="default" className="text-xs">{unreadCount}</Badge>
                 </ItemActions>
               )}
             </div>
