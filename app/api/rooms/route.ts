@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@clerk/nextjs/server"
-import prisma from "@/lib/prisma"
-import { v4 as uuidv4 } from "uuid"
+import { auth, currentUser } from "@clerk/nextjs/server"
+import { db } from "@/lib/db/provider"
+import { getOrCreateDbUser } from "@/lib/server/get-or-create-db-user"
 
 export async function GET() {
   const { userId } = await auth()
@@ -10,14 +10,7 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
   try {
-    const rooms = await prisma.room.findMany({
-      include: {
-        creator: true,
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    })
+    const rooms = await db.getRooms()
 
     return NextResponse.json(rooms)
   } catch (error) {
@@ -34,45 +27,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Get Clerk user to find database user
-    const { currentUser } = await import("@clerk/nextjs/server")
     const clerkUser = await currentUser()
     if (!clerkUser) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
     
-    // Find database user by email
-    const dbUser = await prisma.user.findUnique({
-      where: { email: clerkUser.primaryEmailAddress?.emailAddress || '' },
+    const dbUser = await getOrCreateDbUser(clerkUser)
+
+    const { name, topic, shareableId, isTemporary } = await request.json()
+
+    if (!name) {
+      return NextResponse.json({ error: "name is required" }, { status: 400 })
+    }
+    
+    const room = await db.createRoom({
+      name,
+      topic,
+      createdBy: dbUser.id,
+      shareableId,
+      isTemporary,
     })
-    
-    if (!dbUser) {
-      return NextResponse.json({ error: "User not found in database" }, { status: 400 })
-    }
 
-    const { name, topic, createdBy, shareableId, isTemporary } = await request.json()
-
-    if (!name || !createdBy) {
-      return NextResponse.json({ error: "name and createdBy are required" }, { status: 400 })
-    }
-    
-    // Ensure the authenticated user is the creator (using database user ID)
-    if (createdBy !== dbUser.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
-    }
-
-    const room = await prisma.room.create({
-      data: {
-        id: uuidv4(),
-        name,
-        topic,
-        createdBy: dbUser.id, // Use database user ID
-        // Store shareableId in topic or name if needed (since schema doesn't have shareableId field)
-        // For now, we'll use the room ID as the shareable identifier
-      },
-      include: {
-        creator: true,
-      },
+    // Ensure there is a backing group chat with the same identifier
+    await db.createGroup({
+      id: room.id,
+      name: room.name,
+      avatar: null,
+      createdBy: dbUser.id,
+      memberIds: [dbUser.id],
     })
 
     return NextResponse.json(room, { status: 201 })

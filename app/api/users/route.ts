@@ -1,12 +1,23 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/db/provider"
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    // Note: This endpoint doesn't have a direct equivalent in the adapter
-    // For now, we'll return an empty array or implement a getAllUsers method
-    // This endpoint might not be used in the app, but keeping it for compatibility
-    return NextResponse.json([])
+    const searchQuery = request.nextUrl.searchParams.get("username") ?? request.nextUrl.searchParams.get("q")
+
+    if (!searchQuery) {
+      return NextResponse.json([])
+    }
+
+    const users = await db.searchUsersByUsername(searchQuery, 10)
+    const payload = users.map((user) => ({
+      id: user.id,
+      name: user.name,
+      avatar: user.avatar,
+      username: user.username,
+    }))
+
+    return NextResponse.json(payload)
   } catch (error) {
     console.error("Error fetching users:", error)
     return NextResponse.json({ error: "Failed to fetch users" }, { status: 500 })
@@ -15,7 +26,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, name, avatar } = await request.json()
+    const { email, name, avatar, username } = await request.json()
 
     if (!email || !name) {
       return NextResponse.json({ error: "email and name are required" }, { status: 400 })
@@ -34,6 +45,7 @@ export async function POST(request: NextRequest) {
       email,
       name,
       avatar,
+      username,
     })
 
     console.log('[API] Created new user:', user.id, 'email:', email)

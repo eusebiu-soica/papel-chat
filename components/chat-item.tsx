@@ -74,9 +74,10 @@ interface ChatItemProps {
   message: string
   unreadCount?: number
   imageUrl?: string
+  isLast?: boolean
 }
 
-export default function ChatItem({ id, name, message, unreadCount, imageUrl }: ChatItemProps) {
+export default function ChatItem({ id, name, message, unreadCount, imageUrl, isLast }: ChatItemProps) {
   const pathname = usePathname()
   const router = useRouter()
   // consider nested routes or trailing slashes; handle if pathname contains the chat id
@@ -93,28 +94,31 @@ export default function ChatItem({ id, name, message, unreadCount, imageUrl }: C
   }
 
   return (
-    <div className="flex w-full max-w-xl flex-col gap-0">
+    <div className={cn("flex w-full max-w-xl flex-col gap-0", !isLast && "border-b border-border/50")}>
       <ContextMenu>
         <ContextMenuTrigger className="w-full">
           <Item 
             variant="default" 
-            className={cn("p-3 hover:bg-muted/50 transition-colors cursor-pointer w-full", isActive && "bg-muted/70 border-l-2 border-indigo-500")}
+            className={cn(
+              "p-2 sm:p-3 hover:bg-muted/50 active:bg-muted/70 transition-colors cursor-pointer w-full touch-manipulation",
+              isActive && "bg-muted/70 border-l-2 border-indigo-500"
+            )}
             onClick={handleClick}
           >
-            <div className="flex items-center w-full gap-3">
-              <ItemMedia>
-                <Avatar className="h-10 w-10">
+            <div className="flex items-center w-full gap-2 sm:gap-3 min-w-0">
+              <ItemMedia className="flex-shrink-0">
+                <Avatar className="h-9 w-9 sm:h-10 sm:w-10">
                   <AvatarImage src={imageUrl} />
-                  <AvatarFallback>{name.charAt(0).toUpperCase()}</AvatarFallback>
+                  <AvatarFallback className="text-xs sm:text-sm">{name.charAt(0).toUpperCase()}</AvatarFallback>
                 </Avatar>
               </ItemMedia>
-              <ItemContent>
-                <ItemTitle>{name}</ItemTitle>
-                <ItemDescription className="line-clamp-1">{message}</ItemDescription>
+              <ItemContent className="min-w-0 flex-1">
+                <ItemTitle className="text-sm sm:text-base truncate">{name}</ItemTitle>
+                <ItemDescription className="line-clamp-1 text-xs sm:text-sm">{message}</ItemDescription>
               </ItemContent>
               {(unreadCount ?? 0) > 0 && !isActive && (
-                <ItemActions>
-                  <Badge variant="default">{unreadCount}</Badge>
+                <ItemActions className="flex-shrink-0">
+                  <Badge variant="default" className="text-xs">{unreadCount}</Badge>
                 </ItemActions>
               )}
             </div>

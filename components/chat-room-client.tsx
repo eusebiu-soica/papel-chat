@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useCallback, useEffect } from "react"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { ChatRoom } from "./chat-room"
 import type { Message } from "./chat-messages"
 import { toast } from 'sonner'
@@ -27,47 +28,25 @@ export default function ChatRoomClient({
   onMessagesUpdate
 }: ChatRoomClientProps) {
   const [replyingTo, setReplyingTo] = useState<{ id: string; content: string; senderName: string } | null>(null)
+  const queryClient = useQueryClient()
 
-  const handleSendMessage = useCallback(async (messageContent: string, replyToId?: string) => {
-    // Create optimistic message immediately
-    const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    const optimisticMsg: Message = {
-      id: tempId,
-      content: messageContent,
-      timestamp: new Date().toISOString(),
-      sender: {
-        id: currentUserId,
-        name: "You",
-        avatar: undefined 
-      },
-      replyTo: replyToId ? messages.find(m => m.id === replyToId) ? {
-        id: replyToId,
-        content: messages.find(m => m.id === replyToId)!.content,
-        senderName: messages.find(m => m.id === replyToId)!.sender.name
-      } : undefined : undefined
-    }
-
-    // Show immediately
-    if (onOptimisticUpdate) {
-      onOptimisticUpdate(optimisticMsg)
-    }
-
-    try {
-      // Encrypt message content before sending (with chat-specific key)
-      let encryptedContent = messageContent
+  const sendMessageMutation = useMutation({
+    mutationFn: async ({ content, replyToId }: { content: string; replyToId?: string }) => {
+      // Encrypt message content before sending
+      let encryptedContent = content
       try {
-        const { encrypt } = require('@/lib/encryption')
-        encryptedContent = encrypt(messageContent, isGroupChat ? undefined : id, isGroupChat ? id : undefined)
-      } catch (error) {
+        const { encrypt } = await import('@/lib/encryption')
+        encryptedContent = encrypt(content, isGroupChat ? undefined : id, isGroupChat ? id : undefined)
+      } catch {
         // Silently fail - send unencrypted if encryption fails
-        encryptedContent = messageContent
+        encryptedContent = content
       }
-      
+
       const res = await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          content: encryptedContent, // Send encrypted
+          content: encryptedContent,
           senderId: currentUserId, 
           chatId: isGroupChat ? undefined : id,
           groupId: isGroupChat ? id : undefined,
@@ -77,52 +56,38 @@ export default function ChatRoomClient({
 
       if (!res.ok) {
         const text = await res.text()
-        console.error('Failed to send message', res.status, text)
-        // Remove optimistic message on error
-        if (onMessagesUpdate) {
-          onMessagesUpdate(messages.filter(m => m.id !== tempId))
-        }
-        toast.error('Failed to send message')
-        return
+        throw new Error(text || 'Failed to send message')
       }
 
-      const newMessage = await res.json()
+      return res.json()
+    },
+    onSuccess: (newMessage) => {
+      // Optimistically update the messages cache immediately
+      const identifier = isGroupChat ? `group:${id}` : `chat:${id}`
+      queryClient.setQueryData(['messages', identifier], (old: any[] = []) => {
+        // Check if message already exists (from real-time subscription)
+        const exists = old.some(m => m.id === newMessage.id)
+        if (exists) return old
+        return [...old, newMessage]
+      })
       
-      // Replace optimistic message with real one immediately
-      if (onMessagesUpdate) {
-        onMessagesUpdate(
-          messages.map(m => m.id === tempId ? {
-            id: newMessage.id,
-            content: newMessage.content,
-            timestamp: newMessage.createdAt,
-            sender: {
-              id: newMessage.sender.id,
-              name: newMessage.sender.name,
-              avatar: newMessage.sender.avatar
-            },
-            replyTo: newMessage.replyTo ? {
-              id: newMessage.replyTo.id,
-              content: newMessage.replyTo.content,
-              senderName: newMessage.replyTo.sender.name
-            } : undefined,
-            reactions: newMessage.reactions || [],
-            deletedForEveryone: false
-          } : m)
-        )
-      }
+      // Invalidate chats to update last message
+      queryClient.invalidateQueries({ queryKey: ['chats', currentUserId] })
+    },
+    // Don't retry on error - show error immediately
+    retry: false,
+  })
 
-      // Real-time subscription will automatically update chats
-      // No need to manually refresh
-      
+  const handleSendMessage = useCallback(async (messageContent: string, replyToId?: string) => {
+    try {
+      await sendMessageMutation.mutateAsync({ content: messageContent, replyToId })
+      // Clear reply state on success
+      setReplyingTo(null)
     } catch (err) {
       console.error('Error sending message', err)
-      // Remove optimistic message on error
-      if (onMessagesUpdate) {
-        onMessagesUpdate(messages.filter(m => m.id !== tempId))
-      }
-      toast.error('Error sending message')
+      toast.error('Failed to send message')
     }
-  }, [id, currentUserId, messages, isGroupChat, onOptimisticUpdate, onMessagesUpdate])
+  }, [sendMessageMutation])
 
   const handleReply = useCallback((messageId: string) => {
     const message = messages.find(m => m.id === messageId)
@@ -135,127 +100,67 @@ export default function ChatRoomClient({
     }
   }, [messages])
 
-  const handleReact = useCallback(async (messageId: string, emoji: string) => {
-    // Optimistic update: toggle reaction immediately
-    if (onMessagesUpdate) {
-      const message = messages.find(m => m.id === messageId)
-      if (message) {
-        const currentReactions = message.reactions || []
-        const existingReaction = currentReactions.find(r => r.emoji === emoji && r.userId === currentUserId)
-        
-        let updatedReactions: typeof currentReactions
-        if (existingReaction) {
-          // Remove reaction
-          updatedReactions = currentReactions.filter(r => !(r.emoji === emoji && r.userId === currentUserId))
-        } else {
-          // Add reaction
-          updatedReactions = [...currentReactions, { emoji, userId: currentUserId }]
-        }
-
-        onMessagesUpdate(
-          messages.map(m => 
-            m.id === messageId 
-              ? { ...m, reactions: updatedReactions }
-              : m
-          )
-        )
-      }
-    }
-
-    try {
+  const reactMutation = useMutation({
+    mutationFn: async ({ messageId, emoji }: { messageId: string; emoji: string }) => {
       const res = await fetch('/api/messages/react', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messageId, emoji }),
       })
       
-      if (res.ok) {
-        // Refresh to get server state (for other users' reactions)
-        window.dispatchEvent(new CustomEvent('messages:refresh'))
-        toast.success('Reaction updated')
-      } else {
-        // Revert on error
-        if (onMessagesUpdate) {
-          const originalMessage = messages.find(m => m.id === messageId)
-          if (originalMessage) {
-            onMessagesUpdate(
-              messages.map(msg => 
-                msg.id === messageId ? originalMessage : msg
-              )
-            )
-          }
-        }
-        toast.error('Failed to update reaction')
+      if (!res.ok) {
+        throw new Error('Failed to update reaction')
       }
+      
+      return res.json()
+    },
+    onSuccess: () => {
+      // Invalidate messages query to refetch
+      queryClient.invalidateQueries({ queryKey: ['messages', isGroupChat ? { groupId: id } : { chatId: id }] })
+    },
+  })
+
+  const handleReact = useCallback(async (messageId: string, emoji: string) => {
+    try {
+      await reactMutation.mutateAsync({ messageId, emoji })
     } catch (err) {
       console.error('Error reacting to message', err)
-      // Revert on error
-      if (onMessagesUpdate) {
-        const originalMessage = messages.find(m => m.id === messageId)
-        if (originalMessage) {
-          onMessagesUpdate(
-            messages.map(msg => 
-              msg.id === messageId ? originalMessage : msg
-            )
-          )
-        }
-      }
-      toast.error('Error reacting to message')
+      toast.error('Failed to update reaction')
     }
-  }, [messages, currentUserId, onMessagesUpdate])
+  }, [reactMutation])
 
-  const handleDelete = useCallback(async (messageId: string) => {
-    // Optimistic update: immediately mark as deleted
-    if (onMessagesUpdate) {
-      onMessagesUpdate(
-        messages.map(msg => 
-          msg.id === messageId 
-            ? { ...msg, deletedForEveryone: true, content: '' }
-            : msg
-        )
-      )
-    }
-
-    try {
+  const deleteMessageMutation = useMutation({
+    mutationFn: async (messageId: string) => {
       const res = await fetch('/api/messages/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messageId }),
       })
       
-      if (res.ok) {
-        // Real-time subscriptions will automatically update messages and chats
-        toast.success('Message deleted')
-      } else {
-        // Revert on error
-        if (onMessagesUpdate) {
-          const originalMessage = messages.find(m => m.id === messageId)
-          if (originalMessage) {
-            onMessagesUpdate(
-              messages.map(msg => 
-                msg.id === messageId ? originalMessage : msg
-              )
-            )
-          }
-        }
-        toast.error('Failed to delete message')
+      if (!res.ok) {
+        throw new Error('Failed to delete message')
       }
+      
+      return res.json()
+    },
+    onSuccess: () => {
+      // Invalidate messages and chats queries
+      queryClient.invalidateQueries({ queryKey: ['messages', isGroupChat ? { groupId: id } : { chatId: id }] })
+      queryClient.invalidateQueries({ queryKey: ['chats', currentUserId] })
+      toast.success('Message deleted')
+    },
+    onError: () => {
+      toast.error('Failed to delete message')
+    },
+  })
+
+  const handleDelete = useCallback(async (messageId: string) => {
+    try {
+      await deleteMessageMutation.mutateAsync(messageId)
     } catch (err) {
       console.error('Error deleting message', err)
-      // Revert on error
-      if (onMessagesUpdate) {
-        const originalMessage = messages.find(m => m.id === messageId)
-        if (originalMessage) {
-          onMessagesUpdate(
-            messages.map(msg => 
-              msg.id === messageId ? originalMessage : msg
-            )
-          )
-        }
-      }
-      toast.error('Error deleting message')
     }
-  }, [messages, onMessagesUpdate])
+  }, [deleteMessageMutation])
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -303,6 +208,7 @@ export default function ChatRoomClient({
       onReply={handleReply}
       onReact={handleReact}
       onDelete={handleDelete}
+      isSendingMessage={sendMessageMutation.isPending}
     />
   )
 }

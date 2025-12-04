@@ -166,7 +166,7 @@ export function ChatMessages({
         className
       )}
     >
-      <div className="flex flex-col gap-0.5 px-2 py-4">
+      <div className="flex flex-col gap-0.5 px-2 sm:px-3 md:px-4 py-3 sm:py-4">
         {visibleMessages.map((message, idx) => {
             const msgDate = toDate(message.timestamp)
             const prev = visibleMessages[idx - 1]

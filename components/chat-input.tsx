@@ -1,6 +1,6 @@
 "use client"
 
-import { SendHorizontal, Smile, Paperclip, Mic } from "lucide-react"
+import { SendHorizontal, Smile, Paperclip, Mic, Loader2 } from "lucide-react"
 import { Button } from "./ui/button"
 import { cn } from "@/lib/utils"
 import { useRef, useState, KeyboardEvent } from "react"
@@ -12,6 +12,7 @@ interface ChatInputProps {
   placeholder?: string
   replyingTo?: { id: string; content: string; senderName: string } | null
   onCancelReply?: () => void
+  isLoading?: boolean
 }
 
 export function ChatInput({ 
@@ -19,14 +20,15 @@ export function ChatInput({
   className, 
   placeholder = "Type a message...",
   replyingTo,
-  onCancelReply
+  onCancelReply,
+  isLoading = false
 }: ChatInputProps) {
   const [message, setMessage] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const hasText = message.trim().length > 0
 
   const handleSubmit = () => {
-    if (message.trim()) {
+    if (message.trim() && !isLoading) {
       onSendMessage(message.trim())
       setMessage("")
       if (textareaRef.current) {
@@ -68,19 +70,20 @@ export function ChatInput({
         </div>
       )}
 
-      <div className="flex w-full items-end gap-2 px-3 py-2 relative">
+      <div className="flex w-full items-end gap-2 px-2 sm:px-3 py-2 relative">
         {/* Emoji button - overlapping left */}
         <Button
           variant="ghost"
           size="icon"
           className={cn(
-            "absolute left-4 z-10 h-10 w-10 text-muted-foreground hover:text-foreground hover:bg-muted rounded-full",
-            "transition-all"
+            "absolute left-2 sm:left-4 z-10 h-9 w-9 sm:h-10 sm:w-10 text-muted-foreground hover:text-foreground hover:bg-muted rounded-full",
+            "transition-all touch-manipulation",
+            "active:scale-95"
           )}
           onClick={() => console.log("Emoji picker")}
           title="Add emoji"
         >
-          <Smile className="h-5 w-5" />
+          <Smile className="h-4 w-4 sm:h-5 sm:w-5" />
         </Button>
 
         {/* Attachment button - overlapping left, next to emoji */}
@@ -88,28 +91,32 @@ export function ChatInput({
           variant="ghost"
           size="icon"
           className={cn(
-            "absolute left-14 z-10 h-10 w-10 text-muted-foreground hover:text-foreground hover:bg-muted rounded-full",
-            "transition-all"
+            "absolute left-11 sm:left-14 z-10 h-9 w-9 sm:h-10 sm:w-10 text-muted-foreground hover:text-foreground hover:bg-muted rounded-full",
+            "transition-all touch-manipulation",
+            "active:scale-95"
           )}
           onClick={() => console.log("Attachment")}
           title="Add attachment"
         >
-          <Paperclip className="h-5 w-5" />
+          <Paperclip className="h-4 w-4 sm:h-5 sm:w-5" />
         </Button>
 
         {/* Text Input */}
-        <div className="flex-1 relative pl-20 pr-16">
+        <div className="flex-1 relative pl-[72px] sm:pl-20 pr-[56px] sm:pr-16">
           <Textarea
             ref={textareaRef}
             value={message}
             onChange={handleInput}
             onKeyDown={handleKeyPress}
             placeholder={placeholder}
+            disabled={isLoading}
             className={cn(
               "min-h-[44px] max-h-[120px] resize-none",
               "bg-muted text-foreground placeholder:text-muted-foreground",
-              "border-none rounded-lg px-4 py-2.5",
-              "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0"
+              "border-none rounded-lg px-3 sm:px-4 py-2 sm:py-2.5",
+              "text-sm sm:text-base",
+              "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0",
+              isLoading && "opacity-60 cursor-not-allowed"
             )}
             rows={1}
           />
@@ -120,25 +127,33 @@ export function ChatInput({
           <Button
             onClick={handleSubmit}
             size="icon"
+            disabled={isLoading}
             className={cn(
-              "absolute right-3 z-10 h-10 w-10 shrink-0 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground p-0",
-              "transition-all"
+              "absolute right-2 sm:right-3 z-10 h-9 w-9 sm:h-10 sm:w-10 shrink-0 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground p-0",
+              "transition-all touch-manipulation",
+              "active:scale-95",
+              isLoading && "opacity-60 cursor-not-allowed"
             )}
           >
-            <SendHorizontal className="h-5 w-5" />
+            {isLoading ? (
+              <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" />
+            ) : (
+              <SendHorizontal className="h-4 w-4 sm:h-5 sm:w-5" />
+            )}
           </Button>
         ) : (
           <Button
             variant="ghost"
             size="icon"
             className={cn(
-              "absolute right-3 z-10 h-10 w-10 shrink-0 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted",
-              "transition-all"
+              "absolute right-2 sm:right-3 z-10 h-9 w-9 sm:h-10 sm:w-10 shrink-0 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted",
+              "transition-all touch-manipulation",
+              "active:scale-95"
             )}
             onClick={() => console.log("Voice message")}
             title="Voice message"
           >
-            <Mic className="h-5 w-5" />
+            <Mic className="h-4 w-4 sm:h-5 sm:w-5" />
           </Button>
         )}
       </div>

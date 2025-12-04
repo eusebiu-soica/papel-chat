@@ -1,10 +1,6 @@
 // Database provider factory - switch between Firebase and Prisma
 import { DatabaseAdapter } from "./adapter"
-import { PrismaAdapter } from "./prisma-adapter"
-
-// Set this environment variable to switch databases
-// Values: "firebase" | "firestore" | "prisma"
-const DB_PROVIDER = (process.env.NEXT_PUBLIC_DB_PROVIDER || process.env.DB_PROVIDER || "prisma").toLowerCase()
+import { FirestoreAdapter } from "./firestore-adapter"
 
 let adapterInstance: DatabaseAdapter | null = null
 
@@ -13,34 +9,12 @@ export function getDatabaseAdapter(): DatabaseAdapter {
     return adapterInstance
   }
 
-  switch (DB_PROVIDER) {
-    case "firebase":
-    case "firestore":
-      try {
-        // Dynamically import Firestore adapter to catch initialization errors
-        const { FirestoreAdapter } = require("./firestore-adapter")
-        adapterInstance = new FirestoreAdapter()
-        console.log("📦 Using Firebase Firestore Database")
-        console.log("📦 Adapter has subscribeToChats:", typeof (adapterInstance as any).subscribeToChats === 'function')
-      } catch (error: any) {
-        console.error("❌ Firebase Firestore initialization failed!")
-        console.error("Error:", error?.message || error)
-        console.error("\n📋 To fix this:")
-        console.error("1. Go to https://console.firebase.google.com/")
-        console.error("2. Select project: papel-chat-38e47")
-        console.error("3. Enable 'Firestore Database' (not Realtime Database)")
-        console.error("4. See FIREBASE_SETUP.md for detailed instructions")
-        console.error("\n⚠️  Falling back to Prisma adapter...\n")
-        adapterInstance = new PrismaAdapter()
-        console.log("📦 Using Prisma/PostgreSQL (fallback)")
-      }
-      break
-    case "prisma":
-    default:
-      adapterInstance = new PrismaAdapter()
-      console.log("📦 Using Prisma/PostgreSQL")
-      break
-  }
+  adapterInstance = new FirestoreAdapter()
+  console.log("📦 Using Firebase Firestore Database")
+  console.log(
+    "📦 Adapter has subscribeToChats:",
+    typeof (adapterInstance as any).subscribeToChats === "function"
+  )
 
   return adapterInstance
 }

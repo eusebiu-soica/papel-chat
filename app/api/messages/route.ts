@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth, currentUser } from "@clerk/nextjs/server"
 import { db } from "@/lib/db/provider"
+import { getOrCreateDbUser } from "@/lib/server/get-or-create-db-user"
 
 export async function GET(request: NextRequest) {
   const { userId: authUserId } = await auth()
@@ -68,16 +69,10 @@ export async function POST(request: NextRequest) {
     if (!authUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const clerkUser = await currentUser()
-    let dbUser = await db.getUserByEmail(clerkUser?.primaryEmailAddress?.emailAddress || '')
-    
-    if (!dbUser) {
-      // Create user if doesn't exist
-      dbUser = await db.createUser({
-        email: clerkUser?.primaryEmailAddress?.emailAddress || '',
-        name: clerkUser?.fullName || clerkUser?.firstName || 'User',
-        avatar: clerkUser?.imageUrl || undefined,
-      })
+    if (!clerkUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
+    const dbUser = await getOrCreateDbUser(clerkUser)
 
     let { content, senderId, chatId, groupId, replyToId } = await request.json()
 

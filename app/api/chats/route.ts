@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth, currentUser } from "@clerk/nextjs/server"
 import { db } from "@/lib/db/provider"
+import { getOrCreateDbUser } from "@/lib/server/get-or-create-db-user"
 
 export async function GET(request: NextRequest) {
   const { userId: authUserId } = await auth()
@@ -14,17 +15,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
     
-    // Get or create user in database
-    let dbUser = await db.getUserByEmail(clerkUser.primaryEmailAddress?.emailAddress || '')
-    
-    if (!dbUser) {
-      // Create user if doesn't exist
-      dbUser = await db.createUser({
-        email: clerkUser.primaryEmailAddress?.emailAddress || '',
-        name: clerkUser.fullName || clerkUser.firstName || 'User',
-        avatar: clerkUser.imageUrl || undefined,
-      })
-    }
+    const dbUser = await getOrCreateDbUser(clerkUser)
     
     // --- CAZ SPECIAL: Fetch pentru un singur chat (Rapid) ---
     const chatId = request.nextUrl.searchParams.get("id")
@@ -93,16 +84,10 @@ export async function POST(request: NextRequest) {
     const { userId1, userId2, isPending } = await request.json()
 
     const clerkUser = await currentUser()
-    let dbUser = await db.getUserByEmail(clerkUser?.primaryEmailAddress?.emailAddress || '')
-    
-    if (!dbUser) {
-      // Create user if doesn't exist
-      dbUser = await db.createUser({
-        email: clerkUser?.primaryEmailAddress?.emailAddress || '',
-        name: clerkUser?.fullName || clerkUser?.firstName || 'User',
-        avatar: clerkUser?.imageUrl || undefined,
-      })
+    if (!clerkUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
+    const dbUser = await getOrCreateDbUser(clerkUser)
 
     // CAZ 1: Creare chat "Pending" (Link Share)
     if (isPending) {

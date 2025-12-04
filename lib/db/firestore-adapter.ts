@@ -14,6 +14,8 @@ import {
   where, 
   orderBy, 
   limit, 
+  startAt,
+  endAt,
   Timestamp,
   onSnapshot,
   QuerySnapshot,
@@ -49,6 +51,60 @@ export class FirestoreAdapter implements DatabaseAdapter {
     return new Date()
   }
 
+  // Normalize username for search/comparison (lowercase, keep underscores, remove other special chars)
+  private normalizeUsername(username?: string | null): string {
+    if (!username) return ""
+    return username
+      .toLowerCase()
+      .replace(/[^a-z0-9_]/g, "")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "")
+  }
+
+  // Clean username for storage (preserve underscores and case, but remove invalid chars)
+  private cleanUsername(username: string): string {
+    if (!username) return ""
+    // Keep original case, but remove invalid characters (keep alphanumeric, underscores, hyphens)
+    return username
+      .replace(/[^a-zA-Z0-9_-]/g, "")
+      .replace(/^_+|_+$/g, "")
+      .replace(/^-+|-+$/g, "")
+      .substring(0, 30) // Limit length
+  }
+
+  private async ensureUniqueUsername(base: string): Promise<string> {
+    // Clean the base username (preserve case and underscores)
+    let cleaned = this.cleanUsername(base)
+    if (!cleaned) {
+      cleaned = `papel${Math.floor(Math.random() * 1000)}`
+    }
+
+    // Normalize for uniqueness check
+    const normalized = this.normalizeUsername(cleaned)
+    if (!normalized) {
+      cleaned = `papel${Math.floor(Math.random() * 1000)}`
+    }
+
+    // Check uniqueness using normalized version, but return cleaned version
+    let candidate = cleaned
+    let normalizedCandidate = this.normalizeUsername(candidate)
+    let attempt = 1
+    
+    while (await this.getUserByUsername(candidate)) {
+      // Append number to cleaned version, but check normalized version
+      candidate = `${cleaned}${attempt}`
+      normalizedCandidate = this.normalizeUsername(candidate)
+      attempt += 1
+      if (attempt > 1000) {
+        // Fallback if too many attempts
+        candidate = `${cleaned}_${Math.floor(Math.random() * 10000)}`
+        break
+      }
+    }
+
+    return candidate
+  }
+
   // Helper to convert Date to Firestore Timestamp
   private toTimestamp(date: Date): Timestamp {
     return Timestamp.fromDate(date)
@@ -62,8 +118,39 @@ export class FirestoreAdapter implements DatabaseAdapter {
     
     if (snapshot.empty) return null
     
-    const doc = snapshot.docs[0]
-    return this.parseUser(doc.id, doc.data())
+    const docSnap = snapshot.docs[0]
+    return this.parseUser(docSnap.id, docSnap.data())
+  }
+
+  async getUserByUsername(username: string): Promise<User | null> {
+    const normalized = this.normalizeUsername(username)
+    if (!normalized) return null
+
+    const usersRef = collection(db, 'users')
+    const q = query(usersRef, where('usernameLower', '==', normalized), limit(1))
+    const snapshot = await getDocs(q)
+
+    if (snapshot.empty) return null
+
+    const docSnap = snapshot.docs[0]
+    return this.parseUser(docSnap.id, docSnap.data())
+  }
+
+  async searchUsersByUsername(queryText: string, resultLimit = 5): Promise<User[]> {
+    const normalizedQuery = this.normalizeUsername(queryText)
+    if (!normalizedQuery) return []
+
+    const usersRef = collection(db, 'users')
+    const q = query(
+      usersRef,
+      orderBy('usernameLower'),
+      startAt(normalizedQuery),
+      endAt(`${normalizedQuery}\uf8ff`),
+      limit(resultLimit)
+    )
+    const snapshot = await getDocs(q)
+
+    return snapshot.docs.map(docSnap => this.parseUser(docSnap.id, docSnap.data()))
   }
 
   async getUserById(id: string): Promise<User | null> {
@@ -75,14 +162,18 @@ export class FirestoreAdapter implements DatabaseAdapter {
     return this.parseUser(snapshot.id, snapshot.data())
   }
 
-  async createUser(data: { email: string; name: string; avatar?: string }): Promise<User> {
+  async createUser(data: { email: string; name: string; avatar?: string; username?: string | null }): Promise<User> {
     const usersRef = collection(db, 'users')
     const newUserRef = doc(usersRef)
+    const desiredUsername = data.username || data.name || data.email?.split("@")?.[0] || ""
+    const uniqueUsername = await this.ensureUniqueUsername(desiredUsername)
     
     const userData = {
       email: data.email,
       name: data.name,
       avatar: data.avatar || null,
+      username: uniqueUsername,
+      usernameLower: this.normalizeUsername(uniqueUsername),
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
     }
@@ -94,9 +185,39 @@ export class FirestoreAdapter implements DatabaseAdapter {
       email: data.email,
       name: data.name,
       avatar: data.avatar,
+      username: uniqueUsername,
       createdAt: new Date(),
       updatedAt: new Date(),
     }
+  }
+
+  async updateUser(id: string, data: { name?: string; avatar?: string | null; username?: string | null }): Promise<User> {
+    const userRef = doc(db, 'users', id)
+    const updatePayload: Record<string, any> = {
+      updatedAt: Timestamp.now(),
+    }
+
+    if (typeof data.name !== 'undefined') {
+      updatePayload.name = data.name
+    }
+
+    if (typeof data.avatar !== 'undefined') {
+      updatePayload.avatar = data.avatar
+    }
+
+    if (typeof data.username !== 'undefined') {
+      const uniqueUsername = await this.ensureUniqueUsername(data.username || '')
+      updatePayload.username = uniqueUsername
+      updatePayload.usernameLower = this.normalizeUsername(uniqueUsername)
+    }
+
+    await updateDoc(userRef, updatePayload)
+    const snapshot = await getDoc(userRef)
+    if (!snapshot.exists()) {
+      throw new Error('User not found')
+    }
+
+    return this.parseUser(snapshot.id, snapshot.data())
   }
 
   private parseUser(id: string, data: DocumentData): User {
@@ -105,6 +226,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
       email: data.email,
       name: data.name,
       avatar: data.avatar || undefined,
+      username: data.username || null,
       createdAt: this.toDate(data.createdAt),
       updatedAt: this.toDate(data.updatedAt),
     }
@@ -288,12 +410,33 @@ export class FirestoreAdapter implements DatabaseAdapter {
     const snapshot = await getDocs(q)
     
     const messages: MessageWithDetails[] = []
+    const userIds = new Set<string>()
     
+    // First pass: collect unique user IDs
     for (const docSnap of snapshot.docs) {
+      const msg = docSnap.data()
+      if (params.after && docSnap.id <= params.after) continue
+      userIds.add(msg.senderId)
+    }
+    
+    // Batch load users in parallel (much faster than sequential)
+    const usersMap = new Map<string, User>()
+    const userPromises = Array.from(userIds).map(async (userId) => {
+      try {
+        const user = await this.getUserById(userId)
+        if (user) usersMap.set(userId, user)
+      } catch {
+        // Silently fail
+      }
+    })
+    await Promise.all(userPromises)
+    
+    // Build messages and load reactions/replies in parallel per message
+    const messagePromises = snapshot.docs.map(async (docSnap) => {
       const msg = docSnap.data()
       
       // Skip if after filter is set
-      if (params.after && docSnap.id <= params.after) continue
+      if (params.after && docSnap.id <= params.after) return null
       
       // Decrypt content (crypto-js is synchronous) with chat-specific key
       let decryptedContent = msg.content || ''
@@ -302,13 +445,11 @@ export class FirestoreAdapter implements DatabaseAdapter {
           const { decrypt, isEncrypted } = require('@/lib/encryption')
           if (isEncrypted(msg.content)) {
             decryptedContent = decrypt(msg.content, params.chatId || null, params.groupId || null)
-            // If decryption returns the same value and content looks encrypted, keep original
             if (decryptedContent === msg.content && msg.content.startsWith('ENC:')) {
               decryptedContent = msg.content
             }
           }
         } catch (error) {
-          // Silently fail - return original content (might be unencrypted or corrupted)
           decryptedContent = msg.content
         }
       }
@@ -326,20 +467,23 @@ export class FirestoreAdapter implements DatabaseAdapter {
         updatedAt: this.toDate(msg.updatedAt),
       }
       
-      // Load sender
-      message.sender = await this.getUserById(msg.senderId)
+      // Use cached user
+      message.sender = usersMap.get(msg.senderId) || null
       
-      // Load replyTo if exists
-      if (msg.replyToId) {
-        const replyToMsg = await this.getMessageById(msg.replyToId)
-        message.replyTo = replyToMsg
-      }
+      // Load replyTo and reactions in parallel for this message
+      const [replyTo, reactions] = await Promise.all([
+        msg.replyToId ? this.getMessageById(msg.replyToId).catch(() => null) : Promise.resolve(null),
+        this.getReactionsByMessageId(docSnap.id).catch(() => [] as MessageReaction[])
+      ])
       
-      // Load reactions
-      message.reactions = await this.getReactionsByMessageId(docSnap.id)
+      message.replyTo = replyTo
+      message.reactions = reactions || []
       
-      messages.push(message)
-    }
+      return message
+    })
+    
+    const results = await Promise.all(messagePromises)
+    messages.push(...results.filter((m): m is MessageWithDetails => m !== null))
     
     // Sort in memory if we couldn't use orderBy in query
     if (!params.chatId && !params.groupId || messages.length > 0) {
@@ -619,13 +763,14 @@ export class FirestoreAdapter implements DatabaseAdapter {
   }
 
   async createGroup(data: {
+    id?: string
     name: string
     avatar?: string | null
     createdBy: string
     memberIds?: string[]
   }): Promise<GroupWithDetails> {
     const groupsRef = collection(db, 'groups')
-    const newGroupRef = doc(groupsRef)
+    const newGroupRef = data.id ? doc(groupsRef, data.id) : doc(groupsRef)
     
     await setDoc(newGroupRef, {
       name: data.name,
@@ -655,6 +800,26 @@ export class FirestoreAdapter implements DatabaseAdapter {
 
   async addGroupMember(groupId: string, userId: string): Promise<GroupMember> {
     const membersRef = collection(db, 'group_members')
+    
+    // Prevent duplicate memberships
+    const existingMembershipQuery = query(
+      membersRef,
+      where('groupId', '==', groupId),
+      where('userId', '==', userId),
+      limit(1)
+    )
+    const existingSnapshot = await getDocs(existingMembershipQuery)
+    if (!existingSnapshot.empty) {
+      const existing = existingSnapshot.docs[0]
+      const data = existing.data()
+      return {
+        id: existing.id,
+        groupId,
+        userId,
+        joinedAt: this.toDate(data.joinedAt),
+      }
+    }
+
     const newMemberRef = doc(membersRef)
     
     await setDoc(newMemberRef, {
@@ -699,6 +864,8 @@ export class FirestoreAdapter implements DatabaseAdapter {
         name: r.name,
         topic: r.topic || null,
         createdBy: r.createdBy,
+        shareableId: r.shareableId || null,
+        isTemporary: !!r.isTemporary,
         createdAt: this.toDate(r.createdAt),
         updatedAt: this.toDate(r.updatedAt),
       }
@@ -717,6 +884,8 @@ export class FirestoreAdapter implements DatabaseAdapter {
       name: r.name,
       topic: r.topic || null,
       createdBy: r.createdBy,
+      shareableId: r.shareableId || null,
+      isTemporary: !!r.isTemporary,
       createdAt: this.toDate(r.createdAt),
       updatedAt: this.toDate(r.updatedAt),
     }
@@ -726,6 +895,8 @@ export class FirestoreAdapter implements DatabaseAdapter {
     name: string
     topic?: string | null
     createdBy: string
+    shareableId?: string | null
+    isTemporary?: boolean
   }): Promise<Room> {
     const roomsRef = collection(db, 'rooms')
     const newRoomRef = doc(roomsRef)
@@ -734,6 +905,8 @@ export class FirestoreAdapter implements DatabaseAdapter {
       name: data.name,
       topic: data.topic || null,
       createdBy: data.createdBy,
+      shareableId: data.shareableId || null,
+      isTemporary: !!data.isTemporary,
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
     })
@@ -925,29 +1098,114 @@ export class FirestoreAdapter implements DatabaseAdapter {
         }
         
         message.sender = usersMap.get(msg.senderId)
+        // replyTo will be loaded after all messages are processed
         if (msg.replyToId) {
-          const replyToUser = usersMap.get(msg.replyToId)
-          if (replyToUser) {
-            message.replyTo = {
-              id: msg.replyToId,
-              content: '',
-              senderId: msg.replyToId,
-              chatId: null,
-              groupId: null,
-              replyToId: null,
-              deletedForEveryone: false,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-              sender: replyToUser,
-            }
-          }
+          message.replyToId = msg.replyToId
         }
         
-        // Get initial reactions (will be updated by subscription)
+        // Preserve any existing reactions from previous snapshot (live updates)
         const existingMsg = currentMessages.find(m => m.id === docSnap.id)
         message.reactions = existingMsg?.reactions || []
         
         messages.push(message)
+      }
+      
+      // Seed reactions from persisted data on first load so they survive refresh
+      if (currentMessages.length === 0 && messageIds.length > 0) {
+        try {
+          const reactionsResults = await Promise.all(
+            messageIds.map(async (msgId) => {
+              try {
+                const reactions = await this.getReactionsByMessageId(msgId)
+                return { msgId, reactions }
+              } catch (error) {
+                console.warn('Failed to load reactions for message:', msgId, error)
+                return { msgId, reactions: [] as MessageReaction[] }
+              }
+            })
+          )
+          
+          const reactionsMap = new Map<string, MessageReaction[]>()
+          reactionsResults.forEach(result => {
+            reactionsMap.set(result.msgId, result.reactions)
+          })
+          
+          messages.forEach(m => {
+            if (!m.reactions || m.reactions.length === 0) {
+              m.reactions = reactionsMap.get(m.id) || []
+            }
+          })
+        } catch (error) {
+          console.warn('Failed to seed reactions on initial load:', error)
+        }
+      }
+      
+      // Batch load all replyTo messages in parallel
+      const replyToIds = new Set<string>()
+      messages.forEach(m => {
+        if (m.replyToId) replyToIds.add(m.replyToId)
+      })
+      
+      if (replyToIds.size > 0) {
+        const replyToPromises = Array.from(replyToIds).map(async (replyToId) => {
+          try {
+            const replyToDoc = await getDoc(doc(db, 'messages', replyToId))
+            if (replyToDoc.exists()) {
+              const replyToData = replyToDoc.data()
+              const replyToSender = usersMap.get(replyToData.senderId)
+              
+              // Decrypt replyTo content
+              let replyToContent = replyToData.content || ''
+              if (typeof window !== 'undefined' && replyToData.content && typeof replyToData.content === 'string') {
+                try {
+                  const { decrypt, isEncrypted } = require('@/lib/encryption')
+                  if (isEncrypted(replyToData.content)) {
+                    replyToContent = decrypt(replyToData.content, params.chatId || null, params.groupId || null)
+                  }
+                } catch (error) {
+                  // Silently fail - use original content
+                  replyToContent = replyToData.content
+                }
+              }
+              
+              return {
+                id: replyToId,
+                message: {
+                  id: replyToDoc.id,
+                  content: replyToContent,
+                  senderId: replyToData.senderId,
+                  chatId: replyToData.chatId || null,
+                  groupId: replyToData.groupId || null,
+                  replyToId: replyToData.replyToId || null,
+                  deletedForEveryone: replyToData.deletedForEveryone || false,
+                  deletedAt: replyToData.deletedAt ? this.toDate(replyToData.deletedAt) : null,
+                  createdAt: this.toDate(replyToData.createdAt),
+                  updatedAt: this.toDate(replyToData.updatedAt),
+                  sender: replyToSender,
+                }
+              }
+            }
+          } catch (error) {
+            console.warn('Failed to load replyTo message:', replyToId, error)
+          }
+          return null
+        })
+        
+        const replyToResults = await Promise.all(replyToPromises)
+        const replyToMap = new Map<string, MessageWithDetails>()
+        replyToResults.forEach(result => {
+          if (result) replyToMap.set(result.id, result.message)
+        })
+        
+        // Attach replyTo to messages
+        messages.forEach(m => {
+          if (m.replyToId) {
+            const replyTo = replyToMap.get(m.replyToId)
+            if (replyTo) {
+              m.replyTo = replyTo
+            }
+          }
+        })
       }
       
       currentMessages = messages

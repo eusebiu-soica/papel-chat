@@ -5,6 +5,7 @@ export interface User {
   email: string
   name: string
   avatar?: string
+  username?: string | null
   createdAt: Date
   updatedAt: Date
 }
@@ -59,6 +60,8 @@ export interface Room {
   name: string
   topic?: string | null
   createdBy: string
+  shareableId?: string | null
+  isTemporary?: boolean
   createdAt: Date
   updatedAt: Date
 }
@@ -92,7 +95,10 @@ export interface GroupWithDetails extends Group {
 export interface DatabaseAdapter {
   // User operations
   getUserByEmail(email: string): Promise<User | null>
-  createUser(data: { email: string; name: string; avatar?: string }): Promise<User>
+  getUserByUsername(username: string): Promise<User | null>
+  searchUsersByUsername(query: string, limit?: number): Promise<User[]>
+  createUser(data: { email: string; name: string; avatar?: string; username?: string | null }): Promise<User>
+  updateUser(id: string, data: { name?: string; avatar?: string | null; username?: string | null }): Promise<User>
   getUserById(id: string): Promise<User | null>
 
   // Chat operations
@@ -128,6 +134,7 @@ export interface DatabaseAdapter {
   getGroupsByUserId(userId: string): Promise<GroupWithDetails[]>
   getGroupById(id: string): Promise<GroupWithDetails | null>
   createGroup(data: {
+    id?: string
     name: string
     avatar?: string | null
     createdBy: string
@@ -143,6 +150,8 @@ export interface DatabaseAdapter {
     name: string
     topic?: string | null
     createdBy: string
+    shareableId?: string | null
+    isTemporary?: boolean
   }): Promise<Room>
 
   // Blocked user operations

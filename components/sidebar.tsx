@@ -1,21 +1,33 @@
 "use client"
 
-import { Pencil, Plus } from "lucide-react";
+import { Pencil, Plus, MessageCircle } from "lucide-react";
 import ChatsList from "./chat-list-container";
 import SidebarHeader from "./sidebar-header";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "./ui/card";
 import AddNew from "./add-new";
-import { useEffect, useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { cn } from "@/lib/utils"
 import { useChat } from "@/lib/context/chat-context"
 // Removed duplicate import of useMemo
 import { useRealtimeChats } from "@/hooks/use-realtime-chats"
 
 export default function Sidebar() {
     const { chats, setChats, currentUserId } = useChat()
+    const [isMobile, setIsMobile] = useState(false)
     
     // Use real-time subscription (Firebase) or polling (Prisma)
     const { chats: realtimeChats, isLoading } = useRealtimeChats(currentUserId ?? null)
+
+    // Detect mobile
+    useEffect(() => {
+      const checkMobile = () => {
+        setIsMobile(window.innerWidth < 768)
+      }
+      checkMobile()
+      window.addEventListener('resize', checkMobile)
+      return () => window.removeEventListener('resize', checkMobile)
+    }, [])
 
     // Note: Real-time subscription handles updates automatically
     // Compute formatted chat list from realtimeChats. useMemo avoids recomputation on unrelated renders.
@@ -93,25 +105,68 @@ export default function Sidebar() {
     }, [formattedChats, isLoading, setChats, chats])
     // No need for manual refresh listener - it was causing infinite loops
 
+    // Show empty state if no chats on mobile
+    const showEmptyState = isMobile && (!chats || chats.length === 0)
+
     return (
-        <Card className="relative rounded-none bg-transparent border-none w-[420px] max-w-[420px] w-full p-[8px] gap-0">
-            <CardHeader className="px-0">
+        <Card className="relative rounded-none bg-transparent border-none w-full md:w-[320px] lg:w-[380px] xl:w-[420px] max-w-full md:max-w-[420px] p-2 md:p-[8px] gap-0 h-full flex flex-col">
+            <CardHeader className="px-0 flex-shrink-0">
                 <SidebarHeader />
             </CardHeader>
-            <CardContent className="px-0 max-h-[calc(100vh-85px)] overflow-y-auto pb-24">
-                <ChatsList chats={chats.map(chat => ({
-                  id: chat.id,
-                  name: chat.name,
-                  message: chat.message,
-                  imageUrl: chat.avatar,
-                  unreadCount: chat.unreadCount || 0,
-                }))} />
-            </CardContent>
-            <CardFooter className="px-0 absolute bottom-4 right-4 mb-4 mr-4 pointer-events-none">
-                <div className="pointer-events-auto">
+            {showEmptyState ? (
+              <CardContent className="px-4 flex-1 flex flex-col items-center justify-center gap-4 min-h-0">
+                <div className="flex items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 p-4 sm:p-6">
+                  <MessageCircle className="h-10 w-10 sm:h-12 sm:w-12 text-white" />
+                </div>
+                <div className="space-y-2 text-center">
+                  <h2 className="text-lg sm:text-xl font-bold">No chats yet</h2>
+                  <p className="text-xs sm:text-sm text-muted-foreground px-4">Start a conversation by creating a new chat</p>
+                </div>
+                <div className="pt-2">
                   <AddNew />
                 </div>
-            </CardFooter>
+              </CardContent>
+            ) : (
+              <>
+                <CardContent className="px-0 flex-1 min-h-0 overflow-y-auto pb-24 md:pb-24">
+                  {chats && chats.length > 0 ? (
+                    <ChatsList chats={chats.map(chat => ({
+                      id: chat.id,
+                      name: chat.name,
+                      message: chat.message,
+                      imageUrl: chat.avatar,
+                      unreadCount: chat.unreadCount || 0,
+                    }))} />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-full gap-4 px-4">
+                      <div className="flex items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 p-4 sm:p-6">
+                        <MessageCircle className="h-10 w-10 sm:h-12 sm:w-12 text-white" />
+                      </div>
+                      <div className="space-y-2 text-center">
+                        <h2 className="text-lg sm:text-xl font-bold">No chats yet</h2>
+                        <p className="text-xs sm:text-sm text-muted-foreground">Start a conversation by creating a new chat</p>
+                      </div>
+                      <div className="pt-2">
+                        <AddNew />
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+                {/* Add button - bottom right on desktop, bottom center on mobile */}
+                {chats && chats.length > 0 && (
+                  <CardFooter className={cn(
+                    "px-0 pointer-events-none flex-shrink-0 z-10",
+                    isMobile 
+                      ? "absolute bottom-4 left-0 right-0 w-full flex justify-end px-4" 
+                      : "absolute bottom-2 md:bottom-4 right-2 md:right-4"
+                  )}>
+                    <div className="pointer-events-auto">
+                      <AddNew />
+                    </div>
+                  </CardFooter>
+                )}
+              </>
+            )}
         </Card>
     )
 }
