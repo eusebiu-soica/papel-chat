@@ -23,7 +23,18 @@ import {
 } from "firebase/firestore"
 import { app } from "@/lib/firebase/config"
 
-const db = getFirestore(app)
+// Lazy initialization of Firestore - only initialize if app is available
+let db: ReturnType<typeof getFirestore> | null = null
+
+function getDb() {
+  if (!app) {
+    throw new Error("Firebase is not configured. Please add NEXT_PUBLIC_FIREBASE_* environment variables.")
+  }
+  if (!db) {
+    db = getFirestore(app)
+  }
+  return db
+}
 
 export class FirestoreAdapter implements DatabaseAdapter {
   private toDate(timestamp: any): Date {
@@ -68,7 +79,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
   }
 
   async getUserByEmail(email: string): Promise<User | null> {
-    const q = query(collection(db, 'users'), where('email', '==', email), limit(1))
+    const q = query(collection(getDb(), 'users'), where('email', '==', email), limit(1))
     const snapshot = await getDocs(q)
     return snapshot.empty ? null : this.parseUser(snapshot.docs[0].id, snapshot.docs[0].data())
   }
@@ -76,7 +87,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
   async getUserByUsername(username: string): Promise<User | null> {
     const normalized = this.normalizeUsername(username)
     if (!normalized) return null
-    const q = query(collection(db, 'users'), where('usernameLower', '==', normalized), limit(1))
+    const q = query(collection(getDb(), 'users'), where('usernameLower', '==', normalized), limit(1))
     const snapshot = await getDocs(q)
     return snapshot.empty ? null : this.parseUser(snapshot.docs[0].id, snapshot.docs[0].data())
   }
@@ -84,18 +95,18 @@ export class FirestoreAdapter implements DatabaseAdapter {
   async searchUsersByUsername(queryText: string, resultLimit = 5): Promise<User[]> {
     const normalized = this.normalizeUsername(queryText)
     if (!normalized) return []
-    const q = query(collection(db, 'users'), orderBy('usernameLower'), startAt(normalized), endAt(`${normalized}\uf8ff`), limit(resultLimit))
+    const q = query(collection(getDb(), 'users'), orderBy('usernameLower'), startAt(normalized), endAt(`${normalized}\uf8ff`), limit(resultLimit))
     const snapshot = await getDocs(q)
     return snapshot.docs.map(d => this.parseUser(d.id, d.data()))
   }
 
   async getUserById(id: string): Promise<User | null> {
-    const snapshot = await getDoc(doc(db, 'users', id))
+    const snapshot = await getDoc(doc(getDb(), 'users', id))
     return snapshot.exists() ? this.parseUser(snapshot.id, snapshot.data()) : null
   }
 
   async createUser(data: { id?: string; email: string; name: string; avatar?: string; username?: string | null }): Promise<User> {
-    const usersRef = collection(db, 'users')
+    const usersRef = collection(getDb(), 'users')
     const newUserRef = data.id ? doc(usersRef, data.id) : doc(usersRef)
     const desiredUsername = data.username || data.name || data.email?.split("@")?.[0] || ""
     const uniqueUsername = await this.ensureUniqueUsername(desiredUsername)
@@ -122,7 +133,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
       updates.username = unique
       updates.usernameLower = this.normalizeUsername(unique)
     }
-    await updateDoc(doc(db, 'users', id), updates)
+    await updateDoc(doc(getDb(), 'users', id), updates)
     const u = await this.getUserById(id)
     if (!u) throw new Error('User not found')
     return u
@@ -143,8 +154,8 @@ export class FirestoreAdapter implements DatabaseAdapter {
   // --- CHAT OPERATIONS ---
 
   async getChatsByUserId(userId: string): Promise<ChatWithDetails[]> {
-    const q1 = query(collection(db, 'chats'), where('userId1', '==', userId))
-    const q2 = query(collection(db, 'chats'), where('userId2', '==', userId))
+    const q1 = query(collection(getDb(), 'chats'), where('userId1', '==', userId))
+    const q2 = query(collection(getDb(), 'chats'), where('userId2', '==', userId))
     const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)])
     
     const chatsMap = new Map<string, ChatWithDetails>()
@@ -208,7 +219,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
   }
 
   async getChatById(id: string): Promise<ChatWithDetails | null> {
-    const snap = await getDoc(doc(db, 'chats', id))
+    const snap = await getDoc(doc(getDb(), 'chats', id))
     if (!snap.exists()) return null
     const data = snap.data()
     const chat: ChatWithDetails = {
@@ -224,7 +235,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
   }
 
   async createChat(data: { userId1: string; userId2?: string | null }): Promise<Chat> {
-    const ref = doc(collection(db, 'chats'))
+    const ref = doc(collection(getDb(), 'chats'))
     const now = Timestamp.now()
     const chatData = { userId1: data.userId1, userId2: data.userId2 || null, createdAt: now, updatedAt: now }
     await setDoc(ref, chatData)
@@ -232,20 +243,20 @@ export class FirestoreAdapter implements DatabaseAdapter {
   }
 
   async updateChat(id: string, data: Partial<Chat>): Promise<Chat> {
-    await updateDoc(doc(db, 'chats', id), { ...data, updatedAt: Timestamp.now() })
+    await updateDoc(doc(getDb(), 'chats', id), { ...data, updatedAt: Timestamp.now() })
     const c = await this.getChatById(id)
     if (!c) throw new Error("Chat not found")
     return c
   }
 
   async deleteChat(id: string): Promise<void> {
-    await deleteDoc(doc(db, 'chats', id))
+    await deleteDoc(doc(getDb(), 'chats', id))
   }
 
   // --- MESSAGE OPERATIONS ---
 
   async getMessages(params: { chatId?: string; groupId?: string; after?: string; limit?: number }): Promise<MessageWithDetails[]> {
-    const ref = collection(db, 'messages')
+    const ref = collection(getDb(), 'messages')
     let q = query(ref, orderBy('createdAt', 'asc'))
     if (params.chatId) q = query(ref, where('chatId', '==', params.chatId), orderBy('createdAt', 'asc'))
     else if (params.groupId) q = query(ref, where('groupId', '==', params.groupId), orderBy('createdAt', 'asc'))
@@ -257,7 +268,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
   }
 
   async createMessage(data: { content: string; senderId: string; chatId?: string | null; groupId?: string | null; replyToId?: string | null }): Promise<MessageWithDetails> {
-    const ref = doc(collection(db, 'messages'))
+    const ref = doc(collection(getDb(), 'messages'))
     let encryptedContent = data.content
     
     // CRITICAL: Must encrypt with the same chatId/groupId that will be used for decryption!
@@ -289,8 +300,8 @@ export class FirestoreAdapter implements DatabaseAdapter {
     const batch = [setDoc(ref, msgData)]
     const lastMsg = { id: ref.id, content: encryptedContent, senderId: data.senderId, createdAt: now, updatedAt: now }
     
-    if (data.chatId) batch.push(updateDoc(doc(db, 'chats', data.chatId), { lastMessage: lastMsg, updatedAt: now }))
-    if (data.groupId) batch.push(updateDoc(doc(db, 'groups', data.groupId), { lastMessage: lastMsg, updatedAt: now }))
+    if (data.chatId) batch.push(updateDoc(doc(getDb(), 'chats', data.chatId), { lastMessage: lastMsg, updatedAt: now }))
+    if (data.groupId) batch.push(updateDoc(doc(getDb(), 'groups', data.groupId), { lastMessage: lastMsg, updatedAt: now }))
     
     await Promise.all(batch)
 
@@ -309,17 +320,17 @@ export class FirestoreAdapter implements DatabaseAdapter {
   }
 
   async deleteMessage(id: string): Promise<void> {
-    await updateDoc(doc(db, 'messages', id), { deletedForEveryone: true, content: '', deletedAt: Timestamp.now() })
+    await updateDoc(doc(getDb(), 'messages', id), { deletedForEveryone: true, content: '', deletedAt: Timestamp.now() })
   }
 
   async addReaction(messageId: string, userId: string, emoji: string): Promise<MessageReaction> {
-    const q = query(collection(db, 'message_reactions'), where('messageId', '==', messageId), where('userId', '==', userId), where('emoji', '==', emoji), limit(1))
+    const q = query(collection(getDb(), 'message_reactions'), where('messageId', '==', messageId), where('userId', '==', userId), where('emoji', '==', emoji), limit(1))
     const snap = await getDocs(q)
     if (!snap.empty) {
       await deleteDoc(snap.docs[0].ref)
       throw new Error('Reaction removed')
     }
-    const ref = doc(collection(db, 'message_reactions'))
+    const ref = doc(collection(getDb(), 'message_reactions'))
     const now = Timestamp.now()
     const data = { messageId, userId, emoji, createdAt: now }
     await setDoc(ref, data)
@@ -327,13 +338,13 @@ export class FirestoreAdapter implements DatabaseAdapter {
   }
 
   async getReactionsByMessageId(messageId: string): Promise<MessageReaction[]> {
-    const q = query(collection(db, 'message_reactions'), where('messageId', '==', messageId), orderBy('createdAt', 'asc'))
+    const q = query(collection(getDb(), 'message_reactions'), where('messageId', '==', messageId), orderBy('createdAt', 'asc'))
     const snap = await getDocs(q)
     return snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: this.toDate(d.data().createdAt) } as MessageReaction))
   }
 
   async removeReaction(messageId: string, userId: string, emoji: string): Promise<void> {
-    const q = query(collection(db, 'message_reactions'), where('messageId', '==', messageId), where('userId', '==', userId), where('emoji', '==', emoji), limit(1))
+    const q = query(collection(getDb(), 'message_reactions'), where('messageId', '==', messageId), where('userId', '==', userId), where('emoji', '==', emoji), limit(1))
     const snap = await getDocs(q)
     if (!snap.empty) await deleteDoc(snap.docs[0].ref)
   }
@@ -342,15 +353,15 @@ export class FirestoreAdapter implements DatabaseAdapter {
     const updates: any = { updatedAt: Timestamp.now() }
     if (data.content !== undefined) updates.content = data.content
     if (data.deletedForEveryone !== undefined) updates.deletedForEveryone = data.deletedForEveryone
-    await updateDoc(doc(db, 'messages', id), updates)
-    const snap = await getDoc(doc(db, 'messages', id))
+    await updateDoc(doc(getDb(), 'messages', id), updates)
+    const snap = await getDoc(doc(getDb(), 'messages', id))
     if (!snap.exists()) throw new Error('Message not found')
     const m = snap.data()
     return { id: snap.id, ...m, createdAt: this.toDate(m.createdAt), updatedAt: this.toDate(m.updatedAt) } as Message
   }
 
   async getGroupsByUserId(userId: string): Promise<GroupWithDetails[]> {
-    const q = query(collection(db, 'groups'), where('memberIds', 'array-contains', userId))
+    const q = query(collection(getDb(), 'groups'), where('memberIds', 'array-contains', userId))
     const snap = await getDocs(q)
     return snap.docs.map(d => {
       const data = d.data()
@@ -370,7 +381,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
   // --- SUBSCRIPTIONS ---
 
   subscribeToMessages(params: { chatId?: string; groupId?: string }, callback: (messages: MessageWithDetails[]) => void): () => void {
-    const ref = collection(db, 'messages')
+    const ref = collection(getDb(), 'messages')
     let q = query(ref, orderBy('createdAt', 'asc'))
     if (params.chatId) q = query(ref, where('chatId', '==', params.chatId), orderBy('createdAt', 'asc'))
     else if (params.groupId) q = query(ref, where('groupId', '==', params.groupId), orderBy('createdAt', 'asc'))
@@ -387,7 +398,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
 
     // Subscribe to reactions for messages in this chat/group
     // We'll update reactions whenever they change for any message in our list
-    const reactionsRef = collection(db, 'message_reactions')
+    const reactionsRef = collection(getDb(), 'message_reactions')
     
     // Helper to update reactions for current messages
     const updateReactionsForMessages = async (messages: MessageWithDetails[]) => {
@@ -474,8 +485,8 @@ export class FirestoreAdapter implements DatabaseAdapter {
   }
 
   subscribeToChats(userId: string, callback: (chats: ChatWithDetails[]) => void): () => void {
-    const q1 = query(collection(db, 'chats'), where('userId1', '==', userId))
-    const q2 = query(collection(db, 'chats'), where('userId2', '==', userId))
+    const q1 = query(collection(getDb(), 'chats'), where('userId1', '==', userId))
+    const q2 = query(collection(getDb(), 'chats'), where('userId2', '==', userId))
     
     const chatsMap = new Map<string, ChatWithDetails>()
     
@@ -623,7 +634,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
       if (m.replyToId) {
          // Optimization: If we already have the replied msg in this snapshot, use it
          // Otherwise fetch (keeping it simple here)
-         const replyRef = await getDoc(doc(db, 'messages', m.replyToId))
+         const replyRef = await getDoc(doc(getDb(), 'messages', m.replyToId))
          if (replyRef.exists()) {
             const rd = replyRef.data()
             // Decrypt reply content too - use reply's own chatId/groupId

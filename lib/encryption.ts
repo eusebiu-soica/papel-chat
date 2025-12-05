@@ -7,28 +7,38 @@ const ENCRYPTION_PREFIX = 'ENC:'
 
 // Get master secret used to derive chat keys.
 // Security notes:
-// - On the client, we use NEXT_PUBLIC_ENCRYPTION_SECRET from environment
-// - On the server, use ENCRYPTION_SECRET (no NEXT_PUBLIC_ prefix)
+// - On the client, we MUST use NEXT_PUBLIC_ENCRYPTION_SECRET (Next.js only exposes NEXT_PUBLIC_* to client)
+// - On the server, we can use either NEXT_PUBLIC_ENCRYPTION_SECRET or ENCRYPTION_SECRET
 // - For production, ensure NEXT_PUBLIC_ENCRYPTION_SECRET is set in .env.local
+// - Note: NEXT_PUBLIC_* variables are exposed in the client bundle, but this is necessary for client-side encryption
 function getMasterSecret(): string {
-  if (typeof window !== 'undefined') {
-    // Client-side: use NEXT_PUBLIC_ENCRYPTION_SECRET
-    const secret = process.env.NEXT_PUBLIC_ENCRYPTION_SECRET
-    if (!secret) {
-      console.error('⚠️ NEXT_PUBLIC_ENCRYPTION_SECRET not set! Using fallback (INSECURE).')
-      console.error('⚠️ Set NEXT_PUBLIC_ENCRYPTION_SECRET in .env.local for production.')
-      return 'papel-chat-dev-secret-CHANGE-IN-PRODUCTION'
-    }
-    return secret
+  // Try NEXT_PUBLIC_ENCRYPTION_SECRET first (works on both client and server)
+  const publicSecret = process.env.NEXT_PUBLIC_ENCRYPTION_SECRET
+  if (publicSecret) {
+    return publicSecret
   }
   
-  // Server-side: use ENCRYPTION_SECRET (non-public)
+  // Fallback to ENCRYPTION_SECRET (server-side only)
   const serverSecret = process.env.ENCRYPTION_SECRET
-  if (!serverSecret) {
-    console.warn('ENCRYPTION_SECRET not set on server. Using dev fallback. Set ENCRYPTION_SECRET for production.')
-    return 'papel-chat-server-dev-fallback'
+  if (serverSecret) {
+    // If we're on the client and only ENCRYPTION_SECRET is set, warn the user
+    if (typeof window !== 'undefined') {
+      console.error('⚠️ NEXT_PUBLIC_ENCRYPTION_SECRET not set! ENCRYPTION_SECRET is not available on the client.')
+      console.error('⚠️ Set NEXT_PUBLIC_ENCRYPTION_SECRET in .env.local for client-side encryption to work.')
+      return 'papel-chat-dev-secret-CHANGE-IN-PRODUCTION'
+    }
+    return serverSecret
   }
-  return serverSecret
+  
+  // No secret found - use fallback
+  if (typeof window !== 'undefined') {
+    console.error('⚠️ NEXT_PUBLIC_ENCRYPTION_SECRET not set! Using fallback (INSECURE).')
+    console.error('⚠️ Set NEXT_PUBLIC_ENCRYPTION_SECRET in .env.local for production.')
+    return 'papel-chat-dev-secret-CHANGE-IN-PRODUCTION'
+  }
+  
+  console.warn('ENCRYPTION_SECRET not set on server. Using dev fallback. Set NEXT_PUBLIC_ENCRYPTION_SECRET for production.')
+  return 'papel-chat-server-dev-fallback'
 }
 
 // Generate a shared encryption key for a chat
