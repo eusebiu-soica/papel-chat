@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/card"
 import ChatTitle from "@/components/chat-header";
 
+import { FirebaseAuthSync } from "@/components/providers/firebase-auth-sync";
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -50,6 +52,7 @@ export default function RootLayout({
       <html lang="en" suppressHydrationWarning suppressContentEditableWarning>
         <body
           className={`${geistSans.variable} ${geistMono.variable} antialiased relative`}
+          suppressHydrationWarning
         >
           <ThemeProvider
             attribute="class"
@@ -58,6 +61,7 @@ export default function RootLayout({
             disableTransitionOnChange
           >
             <QueryProvider>
+            <FirebaseAuthSync />
               <ChatProvider>
                 <Toaster position="top-right" />
                 {children}

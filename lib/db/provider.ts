@@ -11,10 +11,10 @@ export function getDatabaseAdapter(): DatabaseAdapter {
 
   adapterInstance = new FirestoreAdapter()
   console.log("📦 Using Firebase Firestore Database")
-  console.log(
-    "📦 Adapter has subscribeToChats:",
-    typeof (adapterInstance as any).subscribeToChats === "function"
-  )
+  const hasSubscribeToChats = typeof (
+    adapterInstance as unknown as { subscribeToChats?: unknown }
+  ).subscribeToChats === "function"
+  console.log("📦 Adapter has subscribeToChats:", hasSubscribeToChats)
 
   return adapterInstance
 }

@@ -17,6 +17,8 @@ import {
   ContextMenuTrigger,
 } from "./ui/context-menu"
 import { cn } from "@/lib/utils"
+import { db } from "@/lib/db/provider"
+import { useChat } from "@/lib/context/chat-context"
 
 type MenuItemType = {
   icon: React.ReactNode
@@ -25,7 +27,7 @@ type MenuItemType = {
   className?: string
 }
 
-const getContextMenuItems = (chatId: string, router: any): MenuItemType[] => [
+const getContextMenuItems = (chatId: string, router: any, currentUserId: string | null): MenuItemType[] => [
   {
     icon: <Pin size={17} />,
     label: "Pin Chat",
@@ -49,15 +51,28 @@ const getContextMenuItems = (chatId: string, router: any): MenuItemType[] => [
     onClick: async () => {
       if (confirm("Are you sure you want to delete this chat? This action cannot be undone.")) {
         try {
-          const res = await fetch(`/api/chats/${chatId}`, {
-            method: 'DELETE',
-          })
-          if (res.ok) {
-            // Chat will be removed from sidebar via real-time subscription
-            router.push('/')
-          } else {
-            alert('Failed to delete chat')
+          if (!currentUserId) {
+            alert('Not authenticated')
+            return
           }
+          
+          // Verify user has access to this chat
+          const chat = await db.getChatById(chatId)
+          if (!chat) {
+            alert('Chat not found')
+            return
+          }
+          
+          // Check if user is part of this chat
+          if (chat.userId1 !== currentUserId && chat.userId2 !== currentUserId) {
+            alert('Unauthorized')
+            return
+          }
+          
+          // Delete directly using db
+          await db.deleteChat(chatId)
+          // Chat will be removed from sidebar via real-time subscription
+          router.push('/')
         } catch (error) {
           console.error('Error deleting chat:', error)
           alert('Failed to delete chat')
@@ -80,10 +95,11 @@ interface ChatItemProps {
 export default function ChatItem({ id, name, message, unreadCount, imageUrl, isLast }: ChatItemProps) {
   const pathname = usePathname()
   const router = useRouter()
+  const { currentUserId } = useChat()
   // consider nested routes or trailing slashes; handle if pathname contains the chat id
   const isActive = !!pathname && pathname.includes(`/chat/${id}`)
   
-  const contextMenuItems = getContextMenuItems(id, router)
+  const contextMenuItems = getContextMenuItems(id, router, currentUserId || null)
 
   const handleClick = (e: React.MouseEvent) => {
     // Only navigate on left click, not right click

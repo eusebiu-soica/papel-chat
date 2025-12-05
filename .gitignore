@@ -40,6 +40,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .env*.local
+firestore.rules
 
 # Windows reserved device names (can't be tracked by Git)
 nul

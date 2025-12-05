@@ -1,10 +1,9 @@
 "use client"
 
 import React from "react"
-
 import { Plus, User, Check, Building2, MessageSquareDashed, Loader2, X } from "lucide-react"
 import { useEffect, useState, useMemo } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useChat } from "@/lib/context/chat-context"
 import { Button } from "./ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar"
@@ -14,6 +13,10 @@ import { Input } from "./ui/input"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useRouter } from "next/navigation"
+// Importam adaptorul direct
+import { FirestoreAdapter } from "@/lib/db/firestore-adapter"
+
+const adapter = new FirestoreAdapter()
 
 function genId() {
   return Math.random().toString(36).slice(2, 9)
@@ -36,40 +39,34 @@ export default function AddNew() {
   const [roomName, setRoomName] = useState("")
   const { currentUserId } = useChat()
   const router = useRouter()
+  const queryClient = useQueryClient()
 
-  // Debounce search input to prevent query on every keystroke
+  // Debounce search
   const [debouncedSearch, setDebouncedSearch] = useState("")
   
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(participantSearch.trim())
-    }, 300) // 300ms debounce
-    
+    }, 300)
     return () => clearTimeout(timer)
   }, [participantSearch])
 
-  const normalizedSearch = debouncedSearch
-  const shouldSearchUsers = chatType === "single" && normalizedSearch.length >= 2 && !selectedUser
-  
-  const { data: fetchedUsers = [], isFetching: isSearchingUsers } = useQuery<UserOption[]>({
-    queryKey: ["user-search", normalizedSearch],
-    enabled: shouldSearchUsers,
+  // 1. CĂUTARE UTILIZATORI (Direct prin Adapter)
+  const { data: fetchedUsers = [], isFetching: isSearchingUsers } = useQuery({
+    queryKey: ["user-search", debouncedSearch],
+    enabled: chatType === "single" && debouncedSearch.length >= 2 && !selectedUser,
     queryFn: async () => {
-      if (normalizedSearch.length < 2) return []
-      const response = await fetch(`/api/users?username=${encodeURIComponent(normalizedSearch)}`)
-      if (!response.ok) {
-        throw new Error("Failed to search users")
-      }
-      return response.json()
+      // Nu mai apelam /api/users, ci Firestore direct
+      const users = await adapter.searchUsersByUsername(debouncedSearch, 5)
+      // Filtram utilizatorul curent din rezultate
+      return users.filter(u => u.id !== currentUserId)
     },
-    staleTime: 1000 * 60, // Cache for 1 minute
-    gcTime: 1000 * 60 * 5, // Keep in cache for 5 minutes
-    placeholderData: (previousData) => previousData,
-    refetchOnWindowFocus: false, // Don't refetch on window focus
+    staleTime: 1000 * 60,
   })
   
   const userSearchResults = selectedUser ? [] : fetchedUsers
 
+  // Reset state on close
   useEffect(() => {
     if (!open) {
       setParticipantSearch("")
@@ -78,28 +75,7 @@ export default function AddNew() {
     }
   }, [open])
 
-  useEffect(() => {
-    if (chatType !== "single") {
-      setParticipantSearch("")
-      setSelectedUser(null)
-    }
-  }, [chatType])
-
-  const OptionCard = React.memo(({
-    icon,
-    label,
-    description,
-    value,
-    selected,
-    onSelect,
-  }: {
-    icon: React.ReactNode
-    label: string
-    description: string
-    value: "single" | "room" | "temporary"
-    selected: boolean
-    onSelect: (value: "single" | "room" | "temporary") => void
-  }) => (
+  const OptionCard = React.memo(({ icon, label, description, value, selected, onSelect }: any) => (
     <button
       onClick={() => onSelect(value)}
       className={cn(
@@ -114,15 +90,10 @@ export default function AddNew() {
           <Check className="size-3 text-primary-foreground" />
         </div>
       )}
-
-      <div
-        className={cn(
-          "flex items-center justify-center size-9 sm:size-10 rounded-lg transition-colors flex-shrink-0",
-          selected
-            ? "bg-primary text-primary-foreground"
-            : "bg-muted text-muted-foreground room-hover:bg-primary/20 room-hover:text-primary",
-        )}
-      >
+      <div className={cn(
+        "flex items-center justify-center size-9 sm:size-10 rounded-lg transition-colors flex-shrink-0",
+        selected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground room-hover:bg-primary/20 room-hover:text-primary",
+      )}>
         {icon}
       </div>
       <div className="space-y-0.5 sm:space-y-1 min-w-0">
@@ -132,14 +103,13 @@ export default function AddNew() {
     </button>
   ))
 
-  // Memoize Content to prevent Input remounting
   const content = useMemo(() => (
     <div className="space-y-4 sm:space-y-6 py-2 sm:py-4">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
         <OptionCard
           icon={<User className="size-4 sm:size-5" />}
           label="Single"
-          description="Private chat between two people"
+          description="Private chat"
           value="single"
           selected={chatType === "single"}
           onSelect={setChatType}
@@ -147,7 +117,7 @@ export default function AddNew() {
         <OptionCard
           icon={<Building2 className="size-4 sm:size-5" />}
           label="Room"
-          description="Room chat with multiple participants"
+          description="Public group"
           value="room"
           selected={chatType === "room"}
           onSelect={setChatType}
@@ -155,7 +125,7 @@ export default function AddNew() {
         <OptionCard
           icon={<MessageSquareDashed className="size-4 sm:size-5" />}
           label="Temporary"
-          description="Temporary chat that expires in 3 hours"
+          description="Expiring chat"
           value="temporary"
           selected={chatType === "temporary"}
           onSelect={setChatType}
@@ -165,41 +135,33 @@ export default function AddNew() {
       {chatType === "single" && (
         <div className="space-y-2 pt-2">
           <div className="flex items-center justify-between gap-2">
-            <label className="text-xs sm:text-sm font-medium">Add participant (optional)</label>
+            <label className="text-xs sm:text-sm font-medium">Add participant</label>
             {selectedUser && (
-              <Button variant="ghost" size="sm" onClick={() => setSelectedUser(null)} className="h-7 sm:h-8 text-xs touch-manipulation">
-                Clear
-              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setSelectedUser(null)} className="h-7 sm:h-8 text-xs">Clear</Button>
             )}
           </div>
           {selectedUser ? (
             <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
               <div className="flex items-center gap-3">
-                <Avatar className="h-9 w-9 sm:h-10 sm:w-10">
-                  <AvatarImage src={selectedUser.avatar || undefined} alt={selectedUser.name} />
-                  <AvatarFallback>{selectedUser.name?.charAt(0).toUpperCase() || "U"}</AvatarFallback>
+                <Avatar className="h-9 w-9">
+                  <AvatarImage src={selectedUser.avatar || undefined} />
+                  <AvatarFallback>{selectedUser.name?.charAt(0).toUpperCase()}</AvatarFallback>
                 </Avatar>
                 <div className="space-y-0.5">
                   <p className="text-sm font-medium">{selectedUser.name}</p>
                   <p className="text-xs text-muted-foreground">@{selectedUser.username || "unknown"}</p>
                 </div>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                onClick={() => setSelectedUser(null)}
-              >
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSelectedUser(null)}>
                 <X className="h-4 w-4" />
               </Button>
             </div>
           ) : (
             <>
               <Input
-                key="participant-search-input"
                 value={participantSearch}
                 onChange={(e) => setParticipantSearch(e.target.value)}
-                placeholder="Search by username (min. 2 characters)"
+                placeholder="Search by username..."
                 className="bg-muted/50 text-xs sm:text-sm"
               />
               {isSearchingUsers ? (
@@ -208,152 +170,115 @@ export default function AddNew() {
                   <span>Searching...</span>
                 </div>
               ) : (
-                shouldSearchUsers && (
-                  userSearchResults.length > 0 ? (
-                    <div className="rounded-lg border border-border divide-y">
-                      {userSearchResults.map((user) => (
-                        <button
-                          key={user.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedUser(user)
-                            setParticipantSearch(user.username || "")
-                          }}
-                          className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted/70 transition-colors"
-                        >
-                          <Avatar className="h-8 w-8">
-                            <AvatarImage src={user.avatar || undefined} alt={user.name} />
-                            <AvatarFallback>{user.name?.charAt(0).toUpperCase() || "U"}</AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <p className="text-sm font-medium">{user.name}</p>
-                            <p className="text-xs text-muted-foreground">@{user.username || "unknown"}</p>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground px-1 py-1.5">No users found.</p>
-                  )
+                userSearchResults.length > 0 && (
+                  <div className="rounded-lg border border-border divide-y max-h-[200px] overflow-y-auto">
+                    {userSearchResults.map((user) => (
+                      <button
+                        key={user.id}
+                        onClick={() => {
+                          setSelectedUser(user)
+                          setParticipantSearch("")
+                        }}
+                        className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted/70 transition-colors"
+                      >
+                        <Avatar className="h-8 w-8">
+                          <AvatarImage src={user.avatar || undefined} />
+                          <AvatarFallback>{user.name?.charAt(0).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="text-sm font-medium">{user.name}</p>
+                          <p className="text-xs text-muted-foreground">@{user.username || "unknown"}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 )
               )}
-              <p className="text-[10px] sm:text-xs text-muted-foreground">
-                Pick a username to start a private chat instantly, or leave empty to create a shareable link.
-              </p>
             </>
           )}
         </div>
       )}
     </div>
-  ), [chatType, selectedUser, participantSearch, isSearchingUsers, shouldSearchUsers, userSearchResults])
+  ), [chatType, selectedUser, participantSearch, isSearchingUsers, userSearchResults])
 
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      if (!currentUserId) throw new Error("Not authenticated")
 
-  const handleCreate = async () => {
-    try {
-      if (chatType === "room") {
-        const res = await fetch('/api/rooms', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: roomName || `Room ${roomId}`, topic: '', createdBy: currentUserId || 'current-user', shareableId: roomId }),
+      // 2. CREARE ROOM (Direct prin Adapter)
+      if (chatType === "room" || chatType === "temporary") {
+        const room = await adapter.createRoom({
+          name: roomName || `Room ${roomId}`,
+          topic: '',
+          createdBy: currentUserId,
+          shareableId: roomId,
+          isTemporary: chatType === "temporary"
         })
-        if (!res.ok) throw new Error('Failed to create room')
-        const room = await res.json()
-        setOpen(false)
-        router.push(`/chat/${room.id}`)
-        return
+        return { type: 'room', id: room.id }
       }
 
+      // 3. CREARE CHAT (Direct prin Adapter)
       if (chatType === 'single') {
-        if (!currentUserId) {
-          alert('Please wait for your account to load')
-          return
-        }
-
         if (selectedUser) {
-          // Create chat with selected user
-          const res = await fetch('/api/chats', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId1: currentUserId,
-              userId2: selectedUser.id,
-            }),
-          })
-          if (!res.ok) {
-            const errorData = await res.json().catch(() => ({}))
-            throw new Error(errorData.error || 'Failed to create chat')
-          }
-          const chat = await res.json()
-          setSelectedUser(null)
-          setParticipantSearch("")
-          setOpen(false)
-          router.push(`/chat/${chat.id}`)
-          return
-        }
-        
-        // Create a single chat that can be joined via link
-        const res = await fetch('/api/chats', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            shareableId: roomId,
-            isPending: true
-          }),
-        })
-        if (!res.ok) {
-          const errorData = await res.json().catch(() => ({}))
-          const errorMessage = errorData.error || 'Failed to create chat'
-          console.error('Chat creation error:', errorMessage, errorData)
-          throw new Error(errorMessage)
-        }
-        const chat = await res.json()
-        
-        setOpen(false)
-        router.push(`/chat/${chat.id}`)
-        return
-      }
+          // Check for existing chat first (Client side query)
+          const existingChats = await adapter.getChatsByUserId(currentUserId)
+          const existing = existingChats.find(c => 
+            (c.userId1 === currentUserId && c.userId2 === selectedUser.id) ||
+            (c.userId1 === selectedUser.id && c.userId2 === currentUserId)
+          )
+          
+          if (existing) return { type: 'chat', id: existing.id }
 
-      if (chatType === 'temporary') {
-        const res = await fetch('/api/rooms', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: `Temp ${roomId}`, topic: '', createdBy: currentUserId || 'current-user', shareableId: roomId, isTemporary: true }),
-        })
-        if (!res.ok) throw new Error('Failed to create temporary room')
-        const room = await res.json()
-        setOpen(false)
-        router.push(`/chat/${room.id}`)
-        return
+          const chat = await adapter.createChat({
+            userId1: currentUserId,
+            userId2: selectedUser.id
+          })
+          return { type: 'chat', id: chat.id }
+        } else {
+          // Create pending chat link
+          const chat = await adapter.createChat({
+            userId1: currentUserId,
+            userId2: null // Pending
+          })
+          return { type: 'chat', id: chat.id }
+        }
       }
-    } catch (err) {
+    },
+    onSuccess: (result) => {
+      if (result) {
+        setOpen(false)
+        // Invalidate queries to refresh lists instantly
+        queryClient.invalidateQueries({ queryKey: ['chats'] })
+        router.push(`/chat/${result.id}`)
+      }
+    },
+    onError: (err) => {
       console.error(err)
-      alert('Failed to create')
+      alert("Failed to create. Please try again.")
     }
-  }
+  })
+
+  const handleCreate = () => createMutation.mutate()
 
   if (isMobile) {
     return (
       <Drawer open={open} onOpenChange={setOpen}>
         <DrawerTrigger asChild>
-          <Button variant="default" className="rounded-full size-11 sm:size-12 cursor-pointer touch-manipulation active:scale-95 transition-transform" size="icon-lg">
+          <Button variant="default" className="rounded-full size-11 sm:size-12" size="icon-lg">
             <Plus className="size-4 sm:size-5" />
           </Button>
         </DrawerTrigger>
-
         <DrawerContent>
           <div className="px-4 py-4 sm:py-6 pb-16">
-            <DrawerTitle className="text-lg sm:text-xl font-semibold mb-4">Create a new chat</DrawerTitle>
+            <DrawerTitle className="text-lg font-semibold mb-4">Create new</DrawerTitle>
             {content}
-            <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2">
+            <div className="mt-4 flex flex-col gap-2">
               {chatType === 'room' && (
-                <Input 
-                  value={roomName} 
-                  onChange={(e) => setRoomName(e.target.value)} 
-                  placeholder="Room name"
-                  className="w-full sm:w-auto"
-                />
+                <Input value={roomName} onChange={(e) => setRoomName(e.target.value)} placeholder="Room name" />
               )}
-              <Button onClick={handleCreate} className="w-full sm:w-auto touch-manipulation">Create</Button>
+              <Button onClick={handleCreate} disabled={createMutation.isPending}>
+                {createMutation.isPending ? "Creating..." : "Create"}
+              </Button>
             </div>
           </div>
         </DrawerContent>
@@ -364,24 +289,20 @@ export default function AddNew() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="default" className="rounded-full size-11 sm:size-12 cursor-pointer touch-manipulation active:scale-95 transition-transform" size="icon-lg">
+        <Button variant="default" className="rounded-full size-11 sm:size-12" size="icon-lg">
           <Plus className="size-4 sm:size-5" />
         </Button>
       </DialogTrigger>
-
-      <DialogContent className="w-[95vw] sm:max-w-3xl max-h-[90vh] overflow-y-auto">
-        <DialogTitle className="text-lg sm:text-xl font-semibold">Create a new chat</DialogTitle>
+      <DialogContent className="sm:max-w-3xl">
+        <DialogTitle>Create new</DialogTitle>
         {content}
-        <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2">
+        <div className="mt-4 flex justify-end gap-2">
           {chatType === 'room' && (
-            <Input 
-              value={roomName} 
-              onChange={(e) => setRoomName(e.target.value)} 
-              placeholder="Room name"
-              className="w-full sm:w-auto"
-            />
+            <Input value={roomName} onChange={(e) => setRoomName(e.target.value)} placeholder="Room name" />
           )}
-          <Button onClick={handleCreate} className="w-full sm:w-auto touch-manipulation">Create</Button>
+          <Button onClick={handleCreate} disabled={createMutation.isPending}>
+             {createMutation.isPending ? "Creating..." : "Create"}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

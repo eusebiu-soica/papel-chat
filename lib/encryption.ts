@@ -84,7 +84,7 @@ export function decrypt(encryptedText: string, chatId?: string | null, groupId?:
     const encrypted = encryptedText.substring(ENCRYPTION_PREFIX.length)
     const key = getChatEncryptionKey(chatId || null, groupId || null)
     const decrypted = CryptoJS.AES.decrypt(encrypted, key)
-    let decryptedText = decrypted.toString(CryptoJS.enc.Utf8)
+    const decryptedText = decrypted.toString(CryptoJS.enc.Utf8)
 
     if (!decryptedText) {
       console.warn('Decryption returned empty string; returning original')

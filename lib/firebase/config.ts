@@ -1,6 +1,7 @@
 // Firebase configuration and initialization (reads values from env)
 import { initializeApp, getApps, FirebaseApp } from "firebase/app"
 import { getAnalytics, Analytics } from "firebase/analytics"
+import { getAuth, Auth } from "firebase/auth"
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "",
@@ -19,6 +20,7 @@ if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
 
 let app: FirebaseApp
 let analytics: Analytics | null = null
+let auth: Auth | null = null
 
 try {
   if (typeof window !== "undefined") {
@@ -31,6 +33,8 @@ try {
       } catch (err) {
         console.warn("Firebase Analytics initialization failed:", err)
       }
+      
+      auth = getAuth(app)
     } else {
       app = getApps()[0]
     }
@@ -38,6 +42,7 @@ try {
     // Server-side: still initialize a lightweight app if env present (safe no-ops)
     if (firebaseConfig.projectId) {
       app = initializeApp(firebaseConfig)
+      auth = getAuth(app)
     } else {
       // Create a dummy object to avoid undefined exports in server builds
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -53,5 +58,5 @@ try {
   throw error
 }
 
-export { app, analytics }
+export { app, analytics, auth }
 
