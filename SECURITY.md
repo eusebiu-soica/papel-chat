@@ -9,7 +9,7 @@ This application uses client-side encryption for all messages. To ensure securit
 Add the following to your `.env.local` file:
 
 ```bash
-NEXT_PUBLIC_ENCRYPTION_SECRET="your-strong-random-secret-here"
+ENCRYPTION_SECRET="your-strong-random-secret-here"
 ```
 
 ### Generating a Strong Secret
@@ -55,12 +55,13 @@ openssl rand -hex 32
    - This is necessary for client-side decryption
    - The security model assumes the secret is kept private
    - For maximum security, consider server-side encryption instead
+   - **See `SECURITY_ASSESSMENT.md` for a detailed security analysis**
 
 ### Setting Up
 
 1. Create `.env.local` in the project root:
 ```bash
-NEXT_PUBLIC_ENCRYPTION_SECRET="your-generated-secret-here"
+ENCRYPTION_SECRET="your-generated-secret-here"
 NEXT_PUBLIC_DB_PROVIDER="firestore"
 DATABASE_URL="your-database-url"
 ```
@@ -74,7 +75,7 @@ DATABASE_URL="your-database-url"
 
 ### Troubleshooting
 
-**Warning: "NEXT_PUBLIC_ENCRYPTION_SECRET not set!"**
+**Warning: "ENCRYPTION_SECRET not set!"**
 - Add the secret to `.env.local`
 - Restart the dev server
 - Clear browser cache if needed

@@ -13,50 +13,66 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || "",
 }
 
-// Helpful warning for missing env vars
-if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-  console.warn('Firebase env vars appear to be missing. Please add NEXT_PUBLIC_FIREBASE_* variables to your .env.local')
+// Check if Firebase is properly configured
+const isFirebaseConfigured = firebaseConfig.apiKey && firebaseConfig.projectId
+
+// Helpful warning for missing env vars (only in development)
+if (!isFirebaseConfigured && typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
+  console.warn('⚠️ Firebase env vars appear to be missing. Please add NEXT_PUBLIC_FIREBASE_* variables to your .env.local')
 }
 
-let app: FirebaseApp
+let app: FirebaseApp | null = null
 let analytics: Analytics | null = null
 let auth: Auth | null = null
 
-try {
-  if (typeof window !== "undefined") {
-    // Client: initialize once
-    if (getApps().length === 0) {
-      app = initializeApp(firebaseConfig)
+// Only initialize Firebase if properly configured
+if (isFirebaseConfigured) {
+  try {
+    if (typeof window !== "undefined") {
+      // Client: initialize once
+      if (getApps().length === 0) {
+        app = initializeApp(firebaseConfig)
 
-      try {
-        analytics = getAnalytics(app)
-      } catch (err) {
-        console.warn("Firebase Analytics initialization failed:", err)
+        try {
+          analytics = getAnalytics(app)
+        } catch (err) {
+          console.warn("Firebase Analytics initialization failed:", err)
+        }
+        
+        auth = getAuth(app)
+      } else {
+        app = getApps()[0]
+        auth = getAuth(app)
       }
-      
-      auth = getAuth(app)
     } else {
-      app = getApps()[0]
+      // Server-side: initialize if env present
+      if (getApps().length === 0) {
+        app = initializeApp(firebaseConfig)
+        auth = getAuth(app)
+      } else {
+        app = getApps()[0]
+        auth = getAuth(app)
+      }
     }
-  } else {
-    // Server-side: still initialize a lightweight app if env present (safe no-ops)
-    if (firebaseConfig.projectId) {
-      app = initializeApp(firebaseConfig)
-      auth = getAuth(app)
-    } else {
-      // Create a dummy object to avoid undefined exports in server builds
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      app = {} as any
+  } catch (error) {
+    console.error("❌ Firebase initialization error:", error)
+    if (process.env.NODE_ENV !== "production") {
+      console.error("\n📋 To fix this:")
+      console.error("1. Add NEXT_PUBLIC_FIREBASE_API_KEY, NEXT_PUBLIC_FIREBASE_PROJECT_ID and related vars to your .env.local")
+      console.error("2. See FIREBASE_SETUP.md for detailed instructions")
     }
+    // Don't throw - allow app to continue without Firebase
+    app = null
+    auth = null
+    analytics = null
   }
-} catch (error) {
-  console.error("❌ Firebase initialization error:", error)
-  console.error("\n📋 To fix this:")
-  console.error("1. Add NEXT_PUBLIC_FIREBASE_API_KEY, NEXT_PUBLIC_FIREBASE_PROJECT_ID and related vars to your .env.local")
-  console.error("2. See FIREBASE_SETUP.md for detailed instructions")
-  console.error("\n⚠️  Falling back to Prisma adapter...")
-  throw error
+} else {
+  // Firebase not configured - create safe null exports
+  if (process.env.NODE_ENV !== "production") {
+    console.warn("⚠️ Firebase not configured. Some features may not work.")
+  }
 }
 
+// Export with null safety - components should check for null before using
 export { app, analytics, auth }
 
