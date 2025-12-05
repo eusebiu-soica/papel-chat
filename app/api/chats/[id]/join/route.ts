@@ -7,11 +7,11 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(
   request: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const { userId: authUserId } = await auth()
-    const { id } = context.params
+    const { id } = await context.params
     
     if (!authUserId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })

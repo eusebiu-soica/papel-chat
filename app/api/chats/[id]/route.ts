@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server"
 import { db } from "@/lib/db/provider"
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { userId } = await auth()
@@ -11,7 +11,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { id } = params
+    const { id } = await params
 
     const chat = await db.getChatById(id)
     if (!chat) {
