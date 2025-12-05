@@ -108,24 +108,24 @@ export default function AddNew() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
         <OptionCard
           icon={<User className="size-4 sm:size-5" />}
-          label="Single"
-          description="Private chat"
+          label="Single Chat"
+          description="Create a private chat with a single user"
           value="single"
           selected={chatType === "single"}
           onSelect={setChatType}
         />
         <OptionCard
           icon={<Building2 className="size-4 sm:size-5" />}
-          label="Room"
-          description="Public group"
+          label="Room Chat"
+          description="Create a public group chat for up to 20 users"
           value="room"
           selected={chatType === "room"}
           onSelect={setChatType}
         />
         <OptionCard
           icon={<MessageSquareDashed className="size-4 sm:size-5" />}
-          label="Temporary"
-          description="Expiring chat"
+          label="Temporary Chat"
+          description="Create a temporary chat that will expire after 3 hours"
           value="temporary"
           selected={chatType === "temporary"}
           onSelect={setChatType}

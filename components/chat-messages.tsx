@@ -23,6 +23,7 @@ export interface Message {
     userId: string
   }>
   deletedForEveryone?: boolean
+  status?: 'sending' | 'sent' | 'error'
 }
 
 interface ChatMessagesProps {
@@ -30,6 +31,8 @@ interface ChatMessagesProps {
   currentUserId: string
   className?: string
   isGroupChat?: boolean
+  chatId?: string | null
+  groupId?: string | null
   onReply?: (messageId: string) => void
   onReact?: (messageId: string, emoji: string) => void
   onDelete?: (messageId: string) => void
@@ -61,6 +64,8 @@ export function ChatMessages({
   currentUserId, 
   className,
   isGroupChat = false,
+  chatId = null,
+  groupId = null,
   onReply,
   onReact,
   onDelete
@@ -188,6 +193,8 @@ export function ChatMessages({
                   isOwn={message.sender.id === currentUserId}
                   isGroupChat={isGroupChat}
                   currentUserId={currentUserId}
+                  chatId={chatId}
+                  groupId={groupId}
                   onReply={onReply}
                   onReact={onReact}
                   onDelete={onDelete}

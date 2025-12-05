@@ -1,12 +1,26 @@
 "use client"
 
-import React, { useState, useCallback, useEffect } from "react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import React, { useState, useCallback } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { ChatRoom } from "./chat-room"
 import type { Message } from "./chat-messages"
 import { toast } from 'sonner'
-import { db } from "@/lib/db/provider"
-import { encrypt } from "@/lib/encryption"
+import { FirestoreAdapter } from "@/lib/db/firestore-adapter"
+import type { ChatWithDetails, MessageWithDetails } from "@/lib/db/adapter"
+import { Loader2 } from "lucide-react"
+
+// Importuri pentru Dialog
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
+
+const adapter = new FirestoreAdapter();
 
 interface ChatRoomClientProps {
   id: string
@@ -26,71 +40,139 @@ export default function ChatRoomClient({
   messages, 
   currentUserId,
   isGroupChat = false,
-  onOptimisticUpdate,
-  onMessagesUpdate
+  onOptimisticUpdate
 }: ChatRoomClientProps) {
   const [replyingTo, setReplyingTo] = useState<{ id: string; content: string; senderName: string } | null>(null)
+  
+  // State pentru modalul de ștergere mesaj
+  const [messageToDelete, setMessageToDelete] = useState<string | null>(null)
+  const [isDeletingMessage, setIsDeletingMessage] = useState(false)
+
   const queryClient = useQueryClient()
 
-  const sendMessageMutation = useMutation({
-    mutationFn: async ({ content, replyToId }: { content: string; replyToId?: string }) => {
-      // Encrypt message content before sending
-      let encryptedContent = content
-      try {
-        encryptedContent = encrypt(content, isGroupChat ? undefined : id, isGroupChat ? id : undefined)
-      } catch {
-        // Silently fail - send unencrypted if encryption fails
-        encryptedContent = content
-      }
+  const handleSendMessage = useCallback(async (messageContent: string, replyToId?: string) => {
+    // 1. Optimistic Update (Instant) - Add to messages list immediately
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    const now = new Date();
+    const identifier = isGroupChat ? `group:${id}` : `chat:${id}`
+    
+    const optimisticMsg: Message = {
+      id: tempId,
+      content: messageContent,
+      timestamp: now.toISOString(),
+      sender: {
+        id: currentUserId,
+        name: "Me", 
+        avatar: undefined 
+      },
+      deletedForEveryone: false,
+      reactions: [],
+      status: 'sending', // Mark as sending
+      replyTo: replyingTo ? {
+        id: replyingTo.id,
+        content: replyingTo.content,
+        senderName: replyingTo.senderName
+      } : undefined
+    };
 
-      // Write directly to Firestore
-      const message = await db.createMessage({
-        content: encryptedContent,
+    // Update messages cache immediately
+    queryClient.setQueryData<MessageWithDetails[]>(['messages', identifier], (old: any[] = []) => {
+      // Check if temp message already exists
+      const exists = old.some(m => m.id === tempId)
+      if (exists) return old
+      return [...old, optimisticMsg as any]
+    })
+    
+    setReplyingTo(null);
+
+    // Actualizare Sidebar Instantanee (decrypted content)
+    queryClient.setQueryData<ChatWithDetails[]>(["chats", currentUserId], (oldChats) => {
+      if (!oldChats) return oldChats;
+      const updatedChats = [...oldChats];
+      const chatIndex = updatedChats.findIndex(c => c.id === id);
+
+      if (chatIndex !== -1) {
+        const chatToUpdate = { ...updatedChats[chatIndex] };
+        chatToUpdate.updatedAt = now;
+        // Use decrypted content directly
+        chatToUpdate.messages = [{
+          id: tempId,
+          content: messageContent, // Decrypted content
+          senderId: currentUserId,
+          createdAt: now,
+          updatedAt: now,
+          chatId: isGroupChat ? null : id,
+          groupId: isGroupChat ? id : null,
+          deletedForEveryone: false,
+          reactions: [],
+          replyToId: replyToId || null,
+          sender: undefined,
+          replyTo: null
+        } as MessageWithDetails];
+        updatedChats.splice(chatIndex, 1);
+        updatedChats.unshift(chatToUpdate);
+        return updatedChats;
+      }
+      return oldChats;
+    });
+
+    try {
+      // Send to Firebase
+      const createdMessage = await adapter.createMessage({
+        content: messageContent,
         senderId: currentUserId,
         chatId: isGroupChat ? undefined : id,
         groupId: isGroupChat ? id : undefined,
-        replyToId: replyToId || undefined,
-      })
+        replyToId: replyToId
+      });
 
-      return message
-    },
-    onSuccess: (newMessage) => {
-      // Optimistically update the messages cache immediately
-      // Note: newMessage.content is already decrypted (createMessage returns original content)
-      const identifier = isGroupChat ? `group:${id}` : `chat:${id}`
-      queryClient.setQueryData(['messages', identifier], (old: any[] = []) => {
-        // Check if message already exists (from real-time subscription)
-        const exists = old.some(m => m.id === newMessage.id)
-        if (exists) {
-          // If exists, update it but preserve decrypted content if subscription hasn't decrypted yet
-          return old.map(m => {
-            if (m.id === newMessage.id) {
-              // Keep decrypted content from optimistic update
-              return { ...m, content: newMessage.content }
-            }
-            return m
-          })
-        }
-        return [...old, newMessage]
+      // Update the temp message with real message data and mark as sent
+      queryClient.setQueryData<MessageWithDetails[]>(['messages', identifier], (old: any[] = []) => {
+        return old.map(msg => {
+          if (msg.id === tempId) {
+            // Replace temp message with real one, mark as sent
+            return {
+              ...createdMessage,
+              status: 'sent'
+            } as any
+          }
+          return msg
+        })
       })
       
-      // Invalidate chats to update last message
-      queryClient.invalidateQueries({ queryKey: ['chats', currentUserId] })
-    },
-    // Don't retry on error - show error immediately
-    retry: false,
-  })
-
-  const handleSendMessage = useCallback(async (messageContent: string, replyToId?: string) => {
-    try {
-      await sendMessageMutation.mutateAsync({ content: messageContent, replyToId })
-      // Clear reply state on success
-      setReplyingTo(null)
+      // Also update sidebar to use real message (decrypted)
+      queryClient.setQueryData<ChatWithDetails[]>(["chats", currentUserId], (oldChats) => {
+        if (!oldChats) return oldChats
+        return oldChats.map(chat => {
+          if (chat.id === id && chat.messages?.[0]?.id === tempId) {
+            return {
+              ...chat,
+              messages: [{
+                ...createdMessage,
+                content: messageContent // Keep decrypted content
+              }]
+            }
+          }
+          return chat
+        })
+      })
     } catch (err) {
-      console.error('Error sending message', err)
-      toast.error('Failed to send message')
+      console.error('Error sending message', err);
+      toast.error('Failed to send message');
+      
+      // Mark message as error
+      queryClient.setQueryData<MessageWithDetails[]>(['messages', identifier], (old: any[] = []) => {
+        return old.map(msg => {
+          if (msg.id === tempId) {
+            return { ...msg, status: 'error' } as any
+          }
+          return msg
+        })
+      })
+      
+      queryClient.invalidateQueries({ queryKey: ["chats", currentUserId] });
     }
-  }, [sendMessageMutation])
+  }, [id, currentUserId, isGroupChat, queryClient, replyingTo]);
 
   const handleReply = useCallback((messageId: string) => {
     const message = messages.find(m => m.id === messageId)
@@ -103,106 +185,80 @@ export default function ChatRoomClient({
     }
   }, [messages])
 
-  const reactMutation = useMutation({
-    mutationFn: async ({ messageId, emoji }: { messageId: string; emoji: string }) => {
-      try {
-        await db.addReaction(messageId, currentUserId, emoji)
-        return { success: true, action: 'added' }
-      } catch (error: any) {
-        // If error message indicates removal, that's fine (toggle behavior)
-        if (error.message === 'Reaction removed') {
-          return { success: true, action: 'removed' }
-        }
-        throw error
-      }
-    },
-    onSuccess: () => {
-      // Invalidate messages query to refetch
-      queryClient.invalidateQueries({ queryKey: ['messages', isGroupChat ? { groupId: id } : { chatId: id }] })
-    },
-  })
-
   const handleReact = useCallback(async (messageId: string, emoji: string) => {
+    const identifier = isGroupChat ? `group:${id}` : `chat:${id}`
+    const previousMessages = queryClient.getQueryData<any[]>(['messages', identifier]);
+
+    queryClient.setQueryData(['messages', identifier], (old: any[] = []) => {
+      return old.map(msg => {
+        if (msg.id === messageId) {
+          const existingReaction = msg.reactions?.find((r: any) => r.userId === currentUserId && r.emoji === emoji);
+          let newReactions = [...(msg.reactions || [])];
+          
+          if (existingReaction) {
+            newReactions = newReactions.filter(r => r !== existingReaction);
+          } else {
+            newReactions.push({
+              id: 'temp-' + Date.now(),
+              userId: currentUserId,
+              emoji,
+              createdAt: new Date()
+            });
+          }
+          return { ...msg, reactions: newReactions };
+        }
+        return msg;
+      });
+    });
+
     try {
-      await reactMutation.mutateAsync({ messageId, emoji })
-    } catch (err) {
-      console.error('Error reacting to message', err)
-      toast.error('Failed to update reaction')
+      await adapter.addReaction(messageId, currentUserId, emoji);
+    } catch (err: any) {
+      if (err.message !== 'Reaction removed') {
+         console.error('Error reacting', err);
+         if (previousMessages) {
+            queryClient.setQueryData(['messages', identifier], previousMessages);
+         }
+      }
     }
-  }, [reactMutation])
+  }, [id, currentUserId, isGroupChat, queryClient]);
 
-  const deleteMessageMutation = useMutation({
-    mutationFn: async (messageId: string) => {
-      // Verify ownership first
-      const messages = await db.getMessages({ 
-        chatId: isGroupChat ? undefined : id, 
-        groupId: isGroupChat ? id : undefined 
-      })
-      const message = messages.find(m => m.id === messageId)
-      
-      if (!message) {
-        throw new Error('Message not found')
-      }
-      
-      if (message.senderId !== currentUserId) {
-        throw new Error('Unauthorized')
-      }
-      
-      await db.deleteMessage(messageId)
-      return { success: true }
-    },
-    onSuccess: () => {
-      // Invalidate messages and chats queries
-      queryClient.invalidateQueries({ queryKey: ['messages', isGroupChat ? { groupId: id } : { chatId: id }] })
-      queryClient.invalidateQueries({ queryKey: ['chats', currentUserId] })
-      toast.success('Message deleted')
-    },
-    onError: () => {
-      toast.error('Failed to delete message')
-    },
-  })
+  // Funcția declanșată când apeși "Delete" din meniul mesajului
+  const handleRequestDelete = useCallback((messageId: string) => {
+    setMessageToDelete(messageId) // Doar deschidem modalul
+  }, [])
 
-  const handleDelete = useCallback(async (messageId: string) => {
+  // Funcția care execută efectiv ștergerea (apelată din modal)
+  const confirmDeleteMessage = async () => {
+    if (!messageToDelete) return
+
     try {
-      await deleteMessageMutation.mutateAsync(messageId)
+      setIsDeletingMessage(true)
+      const identifier = isGroupChat ? `group:${id}` : `chat:${id}`
+      
+      // Optimistic delete
+      queryClient.setQueryData(['messages', identifier], (old: any[] = []) => {
+        return old.map(msg => {
+          if (msg.id === messageToDelete) {
+            return { ...msg, deletedForEveryone: true, content: '' };
+          }
+          return msg;
+        });
+      });
+
+      await adapter.deleteMessage(messageToDelete)
+      setMessageToDelete(null) // Închidem modalul
     } catch (err) {
       console.error('Error deleting message', err)
+      toast.error('Failed to delete message')
+      // Rollback logic could be added here
+    } finally {
+      setIsDeletingMessage(false)
     }
-  }, [deleteMessageMutation])
-
-  useEffect(() => {
-    const handler = (e: Event) => {
-      try {
-        const detail = (e as CustomEvent)?.detail
-        if (!detail) return
-        const msg: any = detail
-        if (!msg) return
-        if (msg.sender?.id === currentUserId) return
-        // determine chat id
-        const messageChatId = msg.chatId ?? msg.groupId ?? msg.chat?.id ?? msg.group?.id
-        if (!messageChatId) return
-        // if user is not currently in that chat, show a toast
-        if (!window.location.pathname.includes(String(messageChatId))) {
-          const text = msg.content?.slice(0, 120) ?? 'New message'
-          toast(`${msg.sender?.name ?? 'Someone'}: ${text}`, {
-            action: {
-              label: 'Open',
-              onClick: () => {
-                window.location.href = `/chat/${messageChatId}`
-              }
-            }
-          })
-        }
-      } catch (err) {
-        console.error('Toast handler error', err)
-      }
-    }
-
-    window.addEventListener('messages:received', handler as EventListener)
-    return () => window.removeEventListener('messages:received', handler as EventListener)
-  }, [currentUserId, id])
+  }
 
   return (
+    <>
     <ChatRoom
       id={id}
       title={title}
@@ -215,8 +271,44 @@ export default function ChatRoomClient({
       onCancelReply={() => setReplyingTo(null)}
       onReply={handleReply}
       onReact={handleReact}
-      onDelete={handleDelete}
-      isSendingMessage={sendMessageMutation.isPending}
-    />
+        onDelete={handleRequestDelete} // Folosim noua funcție care deschide modalul
+        isSendingMessage={false}
+      />
+
+      {/* MODAL CONFIRMARE ȘTERGERE MESAJ */}
+      <Dialog open={!!messageToDelete} onOpenChange={(open) => !open && setMessageToDelete(null)}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Delete Message</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this message? <br /> This will remove it for everyone in the chat.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-1">
+            <Button 
+              variant="ghost" 
+              onClick={() => setMessageToDelete(null)}
+              disabled={isDeletingMessage}
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={confirmDeleteMessage}
+              disabled={isDeletingMessage}
+            >
+              {isDeletingMessage ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete for Everyone"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
