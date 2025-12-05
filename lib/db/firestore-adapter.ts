@@ -996,7 +996,35 @@ export class FirestoreAdapter implements DatabaseAdapter {
     }
     
     const reactionsUnsubscribes = new Map<string, () => void>()
+    const reactionsCache = new Map<string, MessageReaction[]>()
     let currentMessages: MessageWithDetails[] = []
+    
+    // Helper to load reactions for a message
+    const loadReactionsForMessage = async (msgId: string): Promise<MessageReaction[]> => {
+      try {
+        const reactionsRef = collection(db, 'message_reactions')
+        const reactionsQuery = query(
+          reactionsRef,
+          where('messageId', '==', msgId),
+          orderBy('createdAt', 'asc')
+        )
+        const reactionsSnapshot = await getDocs(reactionsQuery)
+        const reactions: MessageReaction[] = reactionsSnapshot.docs.map(docSnap => {
+          const r = docSnap.data()
+          return {
+            id: docSnap.id,
+            messageId: r.messageId,
+            userId: r.userId,
+            emoji: r.emoji,
+            createdAt: this.toDate(r.createdAt),
+          }
+        })
+        reactionsCache.set(msgId, reactions)
+        return reactions
+      } catch (error) {
+        return reactionsCache.get(msgId) || []
+      }
+    }
     
     const unsubscribe = onSnapshot(q, async (snapshot: QuerySnapshot) => {
       const messages: MessageWithDetails[] = []
@@ -1021,7 +1049,15 @@ export class FirestoreAdapter implements DatabaseAdapter {
         })
       )
       
-      // Subscribe to reactions for new messages
+      // Load reactions for all messages in parallel (initial load)
+      const reactionsPromises = messageIds.map(msgId => loadReactionsForMessage(msgId))
+      const reactionsResults = await Promise.all(reactionsPromises)
+      const reactionsMap = new Map<string, MessageReaction[]>()
+      messageIds.forEach((msgId, index) => {
+        reactionsMap.set(msgId, reactionsResults[index])
+      })
+      
+      // Subscribe to reactions for new messages (for real-time updates)
       for (const msgId of messageIds) {
         if (!reactionsUnsubscribes.has(msgId)) {
           const reactionsRef = collection(db, 'message_reactions')
@@ -1042,6 +1078,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
                 createdAt: this.toDate(r.createdAt),
               }
             })
+            reactionsCache.set(msgId, reactions)
             
             // Update current messages with new reactions
             currentMessages = currentMessages.map(m => {
@@ -1061,6 +1098,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
         if (!messageIds.includes(msgId)) {
           unsub()
           reactionsUnsubscribes.delete(msgId)
+          reactionsCache.delete(msgId)
         }
       }
       
@@ -1106,8 +1144,8 @@ export class FirestoreAdapter implements DatabaseAdapter {
         
         message.sender = usersMap.get(msg.senderId)
         
-        const existingMsg = currentMessages.find(m => m.id === docSnap.id)
-        message.reactions = existingMsg?.reactions || []
+        // Use reactions from cache (loaded in parallel above)
+        message.reactions = reactionsMap.get(docSnap.id) || []
         
         messages.push(message)
       }

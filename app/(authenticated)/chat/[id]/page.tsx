@@ -69,7 +69,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       replyTo: msg.replyTo ? {
         id: msg.replyTo.id,
         content: msg.replyTo.content,
-        senderName: msg.replyTo.senderId || 'Unknown'
+        senderName: msg.replyTo.sender?.name || msg.replyTo.senderId || 'Unknown'
       } : undefined,
       reactions: msg.reactions?.map((r) => ({
         emoji: r.emoji,

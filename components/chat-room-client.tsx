@@ -56,11 +56,21 @@ export default function ChatRoomClient({
     },
     onSuccess: (newMessage) => {
       // Optimistically update the messages cache immediately
+      // Note: newMessage.content is already decrypted (createMessage returns original content)
       const identifier = isGroupChat ? `group:${id}` : `chat:${id}`
       queryClient.setQueryData(['messages', identifier], (old: any[] = []) => {
         // Check if message already exists (from real-time subscription)
         const exists = old.some(m => m.id === newMessage.id)
-        if (exists) return old
+        if (exists) {
+          // If exists, update it but preserve decrypted content if subscription hasn't decrypted yet
+          return old.map(m => {
+            if (m.id === newMessage.id) {
+              // Keep decrypted content from optimistic update
+              return { ...m, content: newMessage.content }
+            }
+            return m
+          })
+        }
         return [...old, newMessage]
       })
       

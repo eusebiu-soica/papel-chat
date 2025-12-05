@@ -18,10 +18,10 @@ export function useRealtimeMessages(params: MessageParams) {
   const { data, isLoading } = useQuery({
     queryKey: ["messages", identifier],
     enabled: !!identifier,
-    // SCHIMBARE: Folosim adaptorul direct, nu API-ul
+    // Skip initial fetch - subscription will provide data instantly
     queryFn: async () => {
-      if (!chatId && !groupId) return []
-      return adapter.getMessages({ chatId, groupId })
+      // Return empty array - subscription will populate immediately
+      return [] as MessageWithDetails[]
     },
     initialData: [] as MessageWithDetails[],
     staleTime: Infinity, // Lăsăm subscripția să se ocupe de actualizări
@@ -34,7 +34,9 @@ export function useRealtimeMessages(params: MessageParams) {
     if (!identifier) return
 
     // Subscripție directă la Firebase (instantanee)
+    // The subscription callback will be called immediately with current data
     const unsubscribe = adapter.subscribeToMessages({ chatId, groupId }, (newMessages) => {
+      // Update query data immediately - this will trigger re-render
       queryClient.setQueryData(["messages", identifier], newMessages)
     })
 
