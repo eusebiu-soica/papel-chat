@@ -440,9 +440,9 @@ export class FirestoreAdapter implements DatabaseAdapter {
       
       if (params.after && docSnap.id <= params.after) return null
       
-      // Decrypt content using dynamic import
+      // Decrypt content (server and client). Attempt to import decrypt helper
       let decryptedContent = msg.content || ''
-      if (typeof window !== 'undefined' && msg.content && typeof msg.content === 'string') {
+      if (msg.content && typeof msg.content === 'string') {
         try {
           const { decrypt, isEncrypted } = await import('@/lib/encryption')
           if (isEncrypted(msg.content)) {
@@ -452,6 +452,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
             }
           }
         } catch (error) {
+          // If decryption fails for any reason, fall back to stored content
           decryptedContent = msg.content
         }
       }
@@ -506,8 +507,9 @@ export class FirestoreAdapter implements DatabaseAdapter {
     
     const msg = snapshot.data()
     
+    // Decrypt message content on server or client
     let decryptedContent = msg.content
-    if (typeof window !== 'undefined') {
+    if (msg.content && typeof msg.content === 'string') {
       try {
         const { decrypt, isEncrypted } = await import('@/lib/encryption')
         if (isEncrypted(msg.content)) {
@@ -554,12 +556,13 @@ export class FirestoreAdapter implements DatabaseAdapter {
     const messagesRef = collection(db, 'messages')
     const newMessageRef = doc(messagesRef)
     
+    // Ensure content is encrypted before storing (server and client)
     let encryptedContent = data.content
-    if (typeof window !== 'undefined') {
+    if (data.content && typeof data.content === 'string') {
       try {
         const { encrypt, isEncrypted } = await import('@/lib/encryption')
         if (!isEncrypted(data.content)) {
-          encryptedContent = encrypt(data.content)
+          encryptedContent = encrypt(data.content, data.chatId || null, data.groupId || null)
         }
       } catch (error) {
         encryptedContent = data.content
@@ -1316,21 +1319,19 @@ export class FirestoreAdapter implements DatabaseAdapter {
       chatsMap.set(chatId, chatWithDetails)
     }
     
-    const handleSnapshot = async (snapshot: QuerySnapshot<DocumentData>) => {
-       const currentIds = new Set(snapshot.docs.map(d => d.id))
-       
+     const handleSnapshot = async (snapshot: QuerySnapshot<DocumentData>) => {
        // We can't easily know which query (q1 or q2) this snapshot came from in this merged logic
        // without more complex state tracking.
        // Simplified strategy: Just update map with new/modified docs.
-       // For deletions, it's trickier with 2 streams. 
+       // For deletions, it's trickier with 2 streams.
        // However, since we just want to update the UI, adding/updating is key.
-       // True sync deletion might require a slightly more robust multi-query handler, 
+       // True sync deletion might require a slightly more robust multi-query handler,
        // but this is sufficient for standard chat behavior.
-       
+
        // Process only the changes in this snapshot
        await Promise.all(snapshot.docs.map(docSnap => processChatSnapshot(docSnap)))
        await triggerCallback()
-    }
+     }
 
     const unsubscribe1 = onSnapshot(q1, handleSnapshot, (error) => {
       console.error('[Firestore] Error in userId1 subscription:', error)

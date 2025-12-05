@@ -300,8 +300,8 @@ function ChatBubbleComponent({
                 "mb-1 pb-1.5 border-l-2 pl-2 text-xs",
                 isOwn ? "border-primary-foreground/30 text-primary-foreground/80" : "border-muted-foreground/30 text-muted-foreground"
               )}>
-                <div className="font-medium">{message.replyTo.senderName}</div>
-                <div className="truncate">{message.replyTo.content}</div>
+                <div className="font-medium">{(message.replyTo as any).sender?.name || (message.replyTo as any).senderName || 'Unknown'}</div>
+                <div className="truncate">{(message.replyTo as any).content}</div>
               </div>
             )}
 

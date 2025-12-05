@@ -16,7 +16,14 @@ export interface Message {
   replyTo?: {
     id: string
     content: string
-    senderName: string
+    // Server sometimes returns `sender` object, client used `senderName` previously.
+    // Accept both shapes to avoid runtime mismatch.
+    senderName?: string
+    sender?: {
+      id?: string
+      name?: string
+      avatar?: string
+    }
   }
   reactions?: Array<{
     emoji: string
