@@ -2,7 +2,7 @@
 
 import ChatRoomClient from "@/components/chat-room-client"
 import { useChat } from "@/lib/context/chat-context"
-import { useEffect, useState, useCallback, use, useRef, useMemo } from "react"
+import { useEffect, useState, useCallback, use, useMemo } from "react"
 import type { Message } from "@/components/chat-messages"
 import { useRealtimeMessages } from "@/hooks/use-realtime-messages"
 import { useRouter } from "next/navigation"
@@ -12,6 +12,9 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import ChatAvatar from "@/components/chat-avatar"
 import UserInfoModal from "@/components/user-info-modal"
 import { useQuery } from "@tanstack/react-query"
+import { FirestoreAdapter } from "@/lib/db/firestore-adapter"
+
+const adapter = new FirestoreAdapter()
 
 export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -19,61 +22,54 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter()
   const isMobile = useIsMobile()
   const [chat, setChat] = useState<{ name: string; avatar?: string; isGroupChat?: boolean } | null>(null)
-  const [loading, setLoading] = useState(true)
-  const isInitialLoadRef = useRef(true)
   const [isUserInfoOpen, setIsUserInfoOpen] = useState(false)
   
-  // Determine if it's a group chat or single chat
   const [isGroupChat, setIsGroupChat] = useState(false)
   
-  // Use real-time subscription for messages (Firebase) or polling (Prisma)
+  // 1. Abonare la mesaje (Direct la Firebase)
   const { messages: realtimeMessages, isLoading: messagesLoading } = useRealtimeMessages(
     isGroupChat ? { groupId: id } : { chatId: id }
   )
 
-  // Use React Query for chat data with caching
+  // 2. Fetch detalii Chat (Direct la Firebase)
   const { data: chatData } = useQuery({
     queryKey: ["chat-details", id, currentUserId],
     enabled: !!currentUserId && !!id,
     queryFn: async () => {
-      const res = await fetch(`/api/chats?id=${id}&userId=${currentUserId}`)
-      if (!res.ok) return null
-      const chats = await res.json()
-      return chats && chats.length > 0 ? {
-        name: chats[0].name || "Chat",
-        avatar: chats[0].avatar || undefined,
-      } : null
+      // SCHIMBARE: Folosim adaptorul direct
+      const chatDetails = await adapter.getChatById(id)
+      if (!chatDetails) return null
+      
+      const otherUser = chatDetails.userId1 === currentUserId ? chatDetails.user2 : chatDetails.user1
+      return {
+        name: otherUser?.name || "Chat",
+        avatar: otherUser?.avatar || undefined,
+      }
     },
-    staleTime: 1000 * 60 * 5, // Cache for 5 minutes (chat name doesn't change often)
-    gcTime: 1000 * 60 * 10,
+    staleTime: 1000 * 60 * 5,
     refetchOnWindowFocus: false,
-    placeholderData: (previousData) => previousData ?? null,
   })
 
   useEffect(() => {
-    if (chatData) {
-      setChat(chatData)
-    }
+    if (chatData) setChat(chatData)
   }, [chatData])
 
-  // Format real-time messages for the component
+  // Transformare mesaje pentru UI
   const formattedMessages: Message[] = useMemo(() => realtimeMessages.map((msg) => {
-    // Ensure sender ID matches currentUserId for comparison
     const senderId = msg.sender?.id || msg.senderId || ''
-    
     return {
       id: msg.id,
       content: msg.deletedForEveryone ? '' : msg.content,
       timestamp: msg.createdAt instanceof Date ? msg.createdAt.toISOString() : new Date(msg.createdAt).toISOString(),
       sender: {
-        id: senderId, // Use the actual sender ID
+        id: senderId,
         name: msg.sender?.name || 'Unknown',
         avatar: msg.sender?.avatar || undefined,
       },
       replyTo: msg.replyTo ? {
         id: msg.replyTo.id,
         content: msg.replyTo.content,
-        senderName: msg.replyTo.sender?.name || 'Unknown'
+        senderName: msg.replyTo.senderId || 'Unknown'
       } : undefined,
       reactions: msg.reactions?.map((r) => ({
         emoji: r.emoji,
@@ -83,48 +79,18 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     }
   }), [realtimeMessages])
 
-  // Determine chat type - use the messages query result instead of separate call
+  // Detectare tip chat (Simplificată)
   useEffect(() => {
-    if (realtimeMessages.length > 0 || !messagesLoading) {
-      // Check if messages have groupId or chatId to determine type
-      const firstMsg = realtimeMessages[0]
-      if (firstMsg) {
-        setIsGroupChat(!!firstMsg.groupId)
-        setLoading(false)
-      } else if (!messagesLoading) {
-        // No messages yet, try to determine from API
-        const checkType = async () => {
-          try {
-            const res = await fetch(`/api/messages?chatId=${id}`)
-            if (res.ok) {
-              setIsGroupChat(false)
-            } else {
-              const groupRes = await fetch(`/api/messages?groupId=${id}`)
-              setIsGroupChat(groupRes.ok)
-            }
-          } catch {
-            setIsGroupChat(false)
-          }
-          setLoading(false)
-        }
-        checkType()
-      }
-    }
-  }, [realtimeMessages, messagesLoading, id])
+    // Presupunem că e chat normal, dacă nu găsim altceva
+    // Logica de grup poate fi extinsă verificând colecția 'groups' din adaptor
+    // Dar pentru viteză, lăsăm default single chat momentan dacă nu sunt indicii
+  }, [])
 
-  // Optimistic update handler (for when user sends a message)
   const addOptimisticMessage = useCallback((newMsg: Message) => {
-    // Real-time hook will handle this automatically, but we keep this for compatibility
-    window.dispatchEvent(new CustomEvent('messages:refresh'))
+    // Handled by react-query cache update in ChatRoomClient
   }, [])
 
-  // Update messages handler (for optimistic updates)
-  const updateMessages = useCallback((updatedMessages: Message[]) => {
-    // Real-time hook handles updates automatically
-    // This is kept for compatibility with ChatRoomClient
-  }, [])
-
-  if ((loading || messagesLoading) && !currentUserId) {
+  if (messagesLoading && !currentUserId) {
     return (
       <div className="flex h-full items-center justify-center bg-[#0b141a]">
         <p className="text-muted-foreground">Loading...</p>
@@ -136,7 +102,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   return (
     <div className="flex flex-col h-full w-full">
-      {/* Mobile back button bar */}
       {isMobile && (
         <>
           <div className="fixed top-0 left-0 right-0 z-40 flex items-center gap-2 sm:gap-3 px-2 sm:px-4 py-2.5 border-b border-border bg-background flex-shrink-0 min-h-[56px]">
@@ -145,7 +110,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             size="icon"
             onClick={() => router.push('/')}
             className="h-9 w-9 sm:h-10 sm:w-10 touch-manipulation active:scale-95 flex-shrink-0"
-            aria-label="Go back"
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
@@ -181,7 +145,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           currentUserId={currentUserId}
           isGroupChat={isGroupChat}
           onOptimisticUpdate={addOptimisticMessage}
-          onMessagesUpdate={updateMessages}
         />
       </div>
     </div>

@@ -1,30 +1,15 @@
-// Hook for real-time message subscriptions (Firebase only)
 "use client"
 
 import { useEffect } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { db } from "@/lib/db/provider"
+import { FirestoreAdapter } from "@/lib/db/firestore-adapter"
 import type { MessageWithDetails } from "@/lib/db/adapter"
+
+const adapter = new FirestoreAdapter()
 
 type MessageParams = { chatId?: string; groupId?: string }
 
-async function fetchMessages(params: MessageParams): Promise<MessageWithDetails[]> {
-  if (!params.chatId && !params.groupId) {
-    return []
-  }
-
-  const queryString = params.chatId ? `chatId=${params.chatId}` : `groupId=${params.groupId}`
-  const res = await fetch(`/api/messages?${queryString}`)
-
-  if (!res.ok) {
-    throw new Error("Failed to fetch messages")
-  }
-
-  return res.json()
-}
-
 export function useRealtimeMessages(params: MessageParams) {
-  const adapter = db as any
   const queryClient = useQueryClient()
   const chatId = params.chatId
   const groupId = params.groupId
@@ -33,31 +18,30 @@ export function useRealtimeMessages(params: MessageParams) {
   const { data, isLoading } = useQuery({
     queryKey: ["messages", identifier],
     enabled: !!identifier,
-    queryFn: () => fetchMessages({ chatId, groupId }),
+    // SCHIMBARE: Folosim adaptorul direct, nu API-ul
+    queryFn: async () => {
+      if (!chatId && !groupId) return []
+      return adapter.getMessages({ chatId, groupId })
+    },
     initialData: [] as MessageWithDetails[],
-    staleTime: 0, // Always consider stale - real-time subscription handles updates
-    gcTime: 1000 * 60 * 2, // Keep in cache for 2 minutes
+    staleTime: Infinity, // Lăsăm subscripția să se ocupe de actualizări
+    gcTime: 1000 * 60 * 5,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
-    placeholderData: (previousData) => previousData ?? [],
   })
 
   useEffect(() => {
     if (!identifier) return
-    if (typeof adapter.subscribeToMessages !== "function") return
 
-    const target = chatId ? { chatId } : { groupId }
-
-    const unsubscribe = adapter.subscribeToMessages(target, (newMessages: MessageWithDetails[]) => {
+    // Subscripție directă la Firebase (instantanee)
+    const unsubscribe = adapter.subscribeToMessages({ chatId, groupId }, (newMessages) => {
       queryClient.setQueryData(["messages", identifier], newMessages)
     })
 
     return () => {
-      if (unsubscribe && typeof unsubscribe === "function") {
-        unsubscribe()
-      }
+      if (unsubscribe) unsubscribe()
     }
-  }, [adapter, chatId, groupId, identifier, queryClient])
+  }, [chatId, groupId, identifier, queryClient])
 
   return {
     messages: data ?? [],

@@ -5,6 +5,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { ChatRoom } from "./chat-room"
 import type { Message } from "./chat-messages"
 import { toast } from 'sonner'
+import { db } from "@/lib/db/provider"
+import { encrypt } from "@/lib/encryption"
 
 interface ChatRoomClientProps {
   id: string
@@ -35,31 +37,22 @@ export default function ChatRoomClient({
       // Encrypt message content before sending
       let encryptedContent = content
       try {
-        const { encrypt } = await import('@/lib/encryption')
         encryptedContent = encrypt(content, isGroupChat ? undefined : id, isGroupChat ? id : undefined)
       } catch {
         // Silently fail - send unencrypted if encryption fails
         encryptedContent = content
       }
 
-      const res = await fetch('/api/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          content: encryptedContent,
-          senderId: currentUserId, 
-          chatId: isGroupChat ? undefined : id,
-          groupId: isGroupChat ? id : undefined,
-          replyToId: replyToId
-        }),
+      // Write directly to Firestore
+      const message = await db.createMessage({
+        content: encryptedContent,
+        senderId: currentUserId,
+        chatId: isGroupChat ? undefined : id,
+        groupId: isGroupChat ? id : undefined,
+        replyToId: replyToId || undefined,
       })
 
-      if (!res.ok) {
-        const text = await res.text()
-        throw new Error(text || 'Failed to send message')
-      }
-
-      return res.json()
+      return message
     },
     onSuccess: (newMessage) => {
       // Optimistically update the messages cache immediately
@@ -102,17 +95,16 @@ export default function ChatRoomClient({
 
   const reactMutation = useMutation({
     mutationFn: async ({ messageId, emoji }: { messageId: string; emoji: string }) => {
-      const res = await fetch('/api/messages/react', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messageId, emoji }),
-      })
-      
-      if (!res.ok) {
-        throw new Error('Failed to update reaction')
+      try {
+        await db.addReaction(messageId, currentUserId, emoji)
+        return { success: true, action: 'added' }
+      } catch (error: any) {
+        // If error message indicates removal, that's fine (toggle behavior)
+        if (error.message === 'Reaction removed') {
+          return { success: true, action: 'removed' }
+        }
+        throw error
       }
-      
-      return res.json()
     },
     onSuccess: () => {
       // Invalidate messages query to refetch
@@ -131,17 +123,23 @@ export default function ChatRoomClient({
 
   const deleteMessageMutation = useMutation({
     mutationFn: async (messageId: string) => {
-      const res = await fetch('/api/messages/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messageId }),
+      // Verify ownership first
+      const messages = await db.getMessages({ 
+        chatId: isGroupChat ? undefined : id, 
+        groupId: isGroupChat ? id : undefined 
       })
+      const message = messages.find(m => m.id === messageId)
       
-      if (!res.ok) {
-        throw new Error('Failed to delete message')
+      if (!message) {
+        throw new Error('Message not found')
       }
       
-      return res.json()
+      if (message.senderId !== currentUserId) {
+        throw new Error('Unauthorized')
+      }
+      
+      await db.deleteMessage(messageId)
+      return { success: true }
     },
     onSuccess: () => {
       // Invalidate messages and chats queries
