@@ -221,7 +221,7 @@ function ChatBubbleComponent({
                 "touch-manipulation transition-opacity duration-150",
                 "opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto",
                 "hidden md:flex", // Hide on mobile
-                isOwn ? "-top-10 right-0" : "-top-10 left-0"
+                isOwn ? "-top-10 right-0" : "-top-10 left-0 flex-row-reverse"
               )}
             >
                 {/* All reaction emojis */}
