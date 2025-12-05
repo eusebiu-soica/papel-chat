@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@clerk/nextjs/server"
 import { db } from "@/lib/db/provider"
-
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
     const { userId } = await auth()
@@ -12,17 +11,13 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { id } = await params
-    
-    // Verify user has access to this chat
+    const { id } = params
+
     const chat = await db.getChatById(id)
     if (!chat) {
       return NextResponse.json({ error: "Chat not found" }, { status: 404 })
     }
 
-    // Check if user is part of this chat
-    // Note: You might want to get the current user's DB ID first
-    // For now, we'll allow deletion if chat exists
     await db.deleteChat(id)
 
     return NextResponse.json({ success: true }, { status: 200 })
@@ -31,4 +26,3 @@ export async function DELETE(
     return NextResponse.json({ error: "Internal Error" }, { status: 500 })
   }
 }
-
