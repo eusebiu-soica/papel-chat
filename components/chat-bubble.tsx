@@ -1,10 +1,10 @@
 "use client"
 
 import { cn } from "@/lib/utils"
-import { Trash2, Reply, Smile } from "lucide-react"
+import { Trash2, Reply, Smile, Send } from "lucide-react"
 import { Message } from "./chat-messages"
 import { Button } from "./ui/button"
-import React, { useState, useRef, useEffect, memo } from "react"
+import React, { useState, useRef, useEffect, memo, useMemo } from "react"
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "./ui/drawer"
 import { useIsMobile } from "@/hooks/use-mobile"
 
@@ -13,6 +13,8 @@ interface ChatBubbleProps {
   isOwn?: boolean
   isGroupChat?: boolean // New prop to determine if it's a group/room chat
   currentUserId?: string // To check which reactions are selected
+  chatId?: string | null // Chat ID for decryption
+  groupId?: string | null // Group ID for decryption
   onReply?: (messageId: string) => void
   onReact?: (messageId: string, emoji: string) => void
   onDelete?: (messageId: string) => void
@@ -25,6 +27,8 @@ function ChatBubbleComponent({
   isOwn = false,
   isGroupChat = false,
   currentUserId,
+  chatId = null,
+  groupId = null,
   onReply,
   onReact,
   onDelete
@@ -305,7 +309,40 @@ function ChatBubbleComponent({
               </div>
             )}
 
-            <div className="break-words whitespace-pre-wrap">{message.content}</div>
+            <div className="break-words whitespace-pre-wrap">
+              {(() => {
+                // Ensure content is decrypted before display
+                const content = message.content || ''
+                if (!content || typeof window === 'undefined') return content
+                
+                // If it starts with ENC:, it's encrypted - MUST decrypt
+                if (content.startsWith('ENC:')) {
+                  try {
+                    const { decrypt } = require('@/lib/encryption')
+                    // Use chatId/groupId from props - these should be correct
+                    const decrypted = decrypt(content, chatId, groupId)
+                    // Only use if decryption succeeded
+                    if (decrypted && decrypted !== content && !decrypted.startsWith('ENC:')) {
+                      return decrypted
+                    }
+                    // If decryption failed, log error with details
+                    console.error('❌ Bubble decryption FAILED:', {
+                      messageId: message.id,
+                      chatId,
+                      groupId,
+                      contentPreview: content.substring(0, 50),
+                      decryptedPreview: decrypted?.substring(0, 50)
+                    })
+                    // Still return decrypted even if it failed - better than showing ENC:
+                    return decrypted || content
+                  } catch (e) {
+                    console.error('❌ Bubble decryption exception:', e, 'messageId:', message.id)
+                    return content
+                  }
+                }
+                return content
+              })()}
+            </div>
 
             {/* Timestamp - bottom right */}
             <div className={cn(
@@ -313,6 +350,10 @@ function ChatBubbleComponent({
               isOwn ? "text-primary-foreground/70" : "text-muted-foreground"
             )}>
               <span>{formatTime(message.timestamp)}</span>
+              {/* Show plane icon when sending */}
+              {isOwn && message.status === 'sending' && (
+                <Send className="h-3 w-3 opacity-60 animate-pulse" />
+              )}
             </div>
 
             {/* Reactions - below bubble */}

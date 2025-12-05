@@ -104,6 +104,8 @@ export function ChatRoom({
           currentUserId={currentUserId}
           isGroupChat={isGroupChat}
           className="h-full"
+          chatId={isGroupChat ? null : id}
+          groupId={isGroupChat ? id : null}
           onReply={onReply}
           onReact={onReact}
           onDelete={onDelete}

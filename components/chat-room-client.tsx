@@ -49,11 +49,12 @@ export default function ChatRoomClient({
   const [isDeletingMessage, setIsDeletingMessage] = useState(false)
 
   const queryClient = useQueryClient()
-  
+
   const handleSendMessage = useCallback(async (messageContent: string, replyToId?: string) => {
-    // 1. Optimistic Update (Instant)
-    const tempId = Math.random().toString(36).substring(7);
+    // 1. Optimistic Update (Instant) - Add to messages list immediately
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).substring(7)}`;
     const now = new Date();
+    const identifier = isGroupChat ? `group:${id}` : `chat:${id}`
     
     const optimisticMsg: Message = {
       id: tempId,
@@ -66,6 +67,7 @@ export default function ChatRoomClient({
       },
       deletedForEveryone: false,
       reactions: [],
+      status: 'sending', // Mark as sending
       replyTo: replyingTo ? {
         id: replyingTo.id,
         content: replyingTo.content,
@@ -73,13 +75,17 @@ export default function ChatRoomClient({
       } : undefined
     };
 
-    if (onOptimisticUpdate) {
-      onOptimisticUpdate(optimisticMsg);
-    }
+    // Update messages cache immediately
+    queryClient.setQueryData<MessageWithDetails[]>(['messages', identifier], (old: any[] = []) => {
+      // Check if temp message already exists
+      const exists = old.some(m => m.id === tempId)
+      if (exists) return old
+      return [...old, optimisticMsg as any]
+    })
     
     setReplyingTo(null);
 
-    // Actualizare Sidebar Instantanee
+    // Actualizare Sidebar Instantanee (decrypted content)
     queryClient.setQueryData<ChatWithDetails[]>(["chats", currentUserId], (oldChats) => {
       if (!oldChats) return oldChats;
       const updatedChats = [...oldChats];
@@ -88,9 +94,10 @@ export default function ChatRoomClient({
       if (chatIndex !== -1) {
         const chatToUpdate = { ...updatedChats[chatIndex] };
         chatToUpdate.updatedAt = now;
+        // Use decrypted content directly
         chatToUpdate.messages = [{
           id: tempId,
-          content: messageContent,
+          content: messageContent, // Decrypted content
           senderId: currentUserId,
           createdAt: now,
           updatedAt: now,
@@ -110,19 +117,62 @@ export default function ChatRoomClient({
     });
 
     try {
-      await adapter.createMessage({
+      // Send to Firebase
+      const createdMessage = await adapter.createMessage({
         content: messageContent,
         senderId: currentUserId,
         chatId: isGroupChat ? undefined : id,
         groupId: isGroupChat ? id : undefined,
         replyToId: replyToId
       });
+
+      // Update the temp message with real message data and mark as sent
+      queryClient.setQueryData<MessageWithDetails[]>(['messages', identifier], (old: any[] = []) => {
+        return old.map(msg => {
+          if (msg.id === tempId) {
+            // Replace temp message with real one, mark as sent
+            return {
+              ...createdMessage,
+              status: 'sent'
+            } as any
+          }
+          return msg
+        })
+      })
+      
+      // Also update sidebar to use real message (decrypted)
+      queryClient.setQueryData<ChatWithDetails[]>(["chats", currentUserId], (oldChats) => {
+        if (!oldChats) return oldChats
+        return oldChats.map(chat => {
+          if (chat.id === id && chat.messages?.[0]?.id === tempId) {
+            return {
+              ...chat,
+              messages: [{
+                ...createdMessage,
+                content: messageContent // Keep decrypted content
+              }]
+            }
+          }
+          return chat
+        })
+      })
     } catch (err) {
       console.error('Error sending message', err);
       toast.error('Failed to send message');
+      
+      // Mark message as error
+      queryClient.setQueryData<MessageWithDetails[]>(['messages', identifier], (old: any[] = []) => {
+        return old.map(msg => {
+          if (msg.id === tempId) {
+            return { ...msg, status: 'error' } as any
+          }
+          return msg
+        })
+      })
+      
       queryClient.invalidateQueries({ queryKey: ["chats", currentUserId] });
     }
-  }, [id, currentUserId, isGroupChat, onOptimisticUpdate, queryClient, replyingTo]);
+  }, [id, currentUserId, isGroupChat, queryClient, replyingTo]);
 
   const handleReply = useCallback((messageId: string) => {
     const message = messages.find(m => m.id === messageId)
@@ -209,18 +259,18 @@ export default function ChatRoomClient({
 
   return (
     <>
-      <ChatRoom
-        id={id}
-        title={title}
-        imageUrl={imageUrl}
-        messages={messages}
-        currentUserId={currentUserId}
-        isGroupChat={isGroupChat}
-        onSendMessage={handleSendMessage}
-        replyingTo={replyingTo}
-        onCancelReply={() => setReplyingTo(null)}
-        onReply={handleReply}
-        onReact={handleReact}
+    <ChatRoom
+      id={id}
+      title={title}
+      imageUrl={imageUrl}
+      messages={messages}
+      currentUserId={currentUserId}
+      isGroupChat={isGroupChat}
+      onSendMessage={handleSendMessage}
+      replyingTo={replyingTo}
+      onCancelReply={() => setReplyingTo(null)}
+      onReply={handleReply}
+      onReact={handleReact}
         onDelete={handleRequestDelete} // Folosim noua funcție care deschide modalul
         isSendingMessage={false}
       />

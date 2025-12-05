@@ -11,7 +11,7 @@ import { ArrowLeft } from "lucide-react"
 import { useIsMobile } from "@/hooks/use-mobile"
 import ChatAvatar from "@/components/chat-avatar"
 import UserInfoModal from "@/components/user-info-modal"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { FirestoreAdapter } from "@/lib/db/firestore-adapter"
 
 const adapter = new FirestoreAdapter()
@@ -21,6 +21,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const { currentUserId } = useChat()
   const router = useRouter()
   const isMobile = useIsMobile()
+  const queryClient = useQueryClient()
   const [chat, setChat] = useState<{ name: string; avatar?: string; isGroupChat?: boolean } | null>(null)
   const [isUserInfoOpen, setIsUserInfoOpen] = useState(false)
   
@@ -54,30 +55,121 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     if (chatData) setChat(chatData)
   }, [chatData])
 
-  // Transformare mesaje pentru UI
-  const formattedMessages: Message[] = useMemo(() => realtimeMessages.map((msg) => {
-    const senderId = msg.sender?.id || msg.senderId || ''
-    return {
-      id: msg.id,
-      content: msg.deletedForEveryone ? '' : msg.content,
-      timestamp: msg.createdAt instanceof Date ? msg.createdAt.toISOString() : new Date(msg.createdAt).toISOString(),
-      sender: {
-        id: senderId,
-        name: msg.sender?.name || 'Unknown',
-        avatar: msg.sender?.avatar || undefined,
-      },
-      replyTo: msg.replyTo ? {
-        id: msg.replyTo.id,
-        content: msg.replyTo.content,
-        senderName: msg.replyTo.sender?.name || msg.replyTo.senderId || 'Unknown'
-      } : undefined,
-      reactions: msg.reactions?.map((r) => ({
-        emoji: r.emoji,
-        userId: r.userId
-      })) || [],
-      deletedForEveryone: msg.deletedForEveryone || false,
+  // Helper to safely convert date to ISO string
+  const safeToISOString = (date: any): string => {
+    if (!date) return new Date().toISOString()
+    if (date instanceof Date) {
+      return isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString()
     }
-  }), [realtimeMessages])
+    const parsed = new Date(date)
+    return isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString()
+  }
+
+  // Helper to ensure content is decrypted
+  const ensureDecrypted = useCallback(async (content: string, chatId: string | null, groupId: string | null): Promise<string> => {
+    if (!content || typeof content !== 'string') return content
+    if (typeof window === 'undefined') return content
+    
+    try {
+      const { decrypt, isEncrypted } = await import('@/lib/encryption')
+      if (isEncrypted(content)) {
+        const decrypted = decrypt(content, chatId, groupId)
+        // Only use if decryption succeeded (different and not still encrypted)
+        if (decrypted && decrypted !== content && !decrypted.startsWith('ENC:')) {
+          return decrypted
+        }
+      }
+    } catch (e) {
+      console.error('Client-side decryption error:', e)
+    }
+    return content
+  }, [])
+
+  // Transformare mesaje pentru UI - merge optimistic + realtime
+  const formattedMessages: Message[] = useMemo(() => {
+    const identifier = isGroupChat ? `group:${id}` : `chat:${id}`
+    const cachedMessages = queryClient.getQueryData<Message[]>(['messages', identifier]) || []
+    
+    // Merge cached (optimistic) messages with realtime messages
+    const messageMap = new Map<string, Message>()
+    
+    // FIRST: Add optimistic messages (sending/error) - these need to show instantly
+    cachedMessages.forEach((msg) => {
+      if (msg.status === 'sending' || msg.status === 'error') {
+        messageMap.set(msg.id, msg)
+      }
+    })
+    
+    // THEN: Add all realtime messages (from subscription) - these should be decrypted but verify
+    realtimeMessages.forEach((msg) => {
+      const senderId = msg.sender?.id || msg.senderId || ''
+      let content = msg.deletedForEveryone ? '' : msg.content
+      
+      // CRITICAL: Double-check decryption - use message's own chatId/groupId
+      if (content && typeof window !== 'undefined' && content.startsWith('ENC:')) {
+        try {
+          const { decrypt } = require('@/lib/encryption')
+          // Use the message's own chatId/groupId from the message data
+          const msgChatId = msg.chatId || null
+          const msgGroupId = msg.groupId || null
+          const decrypted = decrypt(content, msgChatId, msgGroupId)
+          if (decrypted && decrypted !== content && !decrypted.startsWith('ENC:')) {
+            content = decrypted
+          } else {
+            console.error('❌ Page decryption FAILED:', {
+              messageId: msg.id,
+              msgChatId,
+              msgGroupId,
+              contentPreview: content.substring(0, 50),
+              decryptedPreview: decrypted?.substring(0, 50)
+            })
+            // Still use decrypted even if check failed
+            if (decrypted && !decrypted.startsWith('ENC:')) {
+              content = decrypted
+            }
+          }
+        } catch (e) {
+          console.error('❌ Page decryption exception:', e, 'messageId:', msg.id)
+        }
+      }
+      
+      messageMap.set(msg.id, {
+        id: msg.id,
+        content,
+        timestamp: safeToISOString(msg.createdAt),
+        sender: {
+          id: senderId,
+          name: msg.sender?.name || 'Unknown',
+          avatar: msg.sender?.avatar || undefined,
+        },
+        replyTo: msg.replyTo ? {
+          id: msg.replyTo.id,
+          content: msg.replyTo.content,
+          senderName: msg.replyTo.sender?.name || msg.replyTo.senderId || 'Unknown'
+        } : undefined,
+        reactions: msg.reactions?.map((r) => ({
+          emoji: r.emoji,
+          userId: r.userId
+        })) || [],
+        deletedForEveryone: msg.deletedForEveryone || false,
+        status: 'sent' as const
+      })
+    })
+    
+    // Finally: Add any other cached messages that aren't in realtime (shouldn't happen normally)
+    cachedMessages.forEach((msg) => {
+      if (!messageMap.has(msg.id) && msg.status !== 'sending' && msg.status !== 'error') {
+        messageMap.set(msg.id, msg)
+      }
+    })
+    
+    return Array.from(messageMap.values()).sort((a, b) => {
+      const timeA = new Date(a.timestamp).getTime()
+      const timeB = new Date(b.timestamp).getTime()
+      if (isNaN(timeA) || isNaN(timeB)) return 0
+      return timeA - timeB
+    })
+  }, [realtimeMessages, id, isGroupChat, queryClient])
 
   // Detectare tip chat (Simplificată)
   useEffect(() => {
@@ -116,13 +208,14 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             <button
               type="button"
               onClick={() => setIsUserInfoOpen(true)}
-              className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0 hover:opacity-80 transition-opacity"
+              className="flex items-center gap-3 sm:gap-3  min-w-0 hover:opacity-80 transition-opacity"
             >
               <div className="flex-shrink-0">
                 <ChatAvatar imageUrl={chat?.avatar} name={chat?.name || "Chat"} />
               </div>
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 flex flex-col justify-start items-start min-w-0">
                 <h2 className="text-sm sm:text-base font-medium truncate">{chat?.name || "Chat"}</h2>
+                <h2 className="text-xs font-regular text-muted-foreground truncate">Click for more info</h2>
               </div>
             </button>
           </div>
