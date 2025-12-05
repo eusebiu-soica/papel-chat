@@ -3,6 +3,8 @@ import { auth, currentUser } from "@clerk/nextjs/server"
 import { db } from "@/lib/db/provider"
 import { getOrCreateDbUser } from "@/lib/server/get-or-create-db-user"
 
+export const dynamic = 'force-dynamic'
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
