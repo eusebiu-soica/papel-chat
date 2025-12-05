@@ -5,11 +5,11 @@ import { getOrCreateDbUser } from "@/lib/server/get-or-create-db-user"
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: { params: { id: string } }
 ) {
   try {
     const { userId: authUserId } = await auth()
-    const { id } = await params
+    const { id } = context.params
     
     if (!authUserId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -43,10 +43,9 @@ export async function POST(
 
     await db.addGroupMember(group.id, dbUser.id)
 
-    return NextResponse.json({ success: true, groupId: group.id }, { status: 200 })
+    return NextResponse.json({ success: true, groupId: group.id })
   } catch (error) {
     console.error("Error joining room:", error)
     return NextResponse.json({ error: "Failed to join room" }, { status: 500 })
   }
 }
-
