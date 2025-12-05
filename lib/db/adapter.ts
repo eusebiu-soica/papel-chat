@@ -82,7 +82,7 @@ export interface ChatWithDetails extends Chat {
 
 export interface MessageWithDetails extends Message {
   sender?: User
-  replyTo?: Message | null
+  replyTo?: MessageWithDetails | null
   reactions?: MessageReaction[]
 }
 

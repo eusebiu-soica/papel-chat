@@ -440,9 +440,9 @@ export class FirestoreAdapter implements DatabaseAdapter {
       
       if (params.after && docSnap.id <= params.after) return null
       
-      // Decrypt content (server and client). Attempt to import decrypt helper
+      // Decrypt content using dynamic import
       let decryptedContent = msg.content || ''
-      if (msg.content && typeof msg.content === 'string') {
+      if (typeof window !== 'undefined' && msg.content && typeof msg.content === 'string') {
         try {
           const { decrypt, isEncrypted } = await import('@/lib/encryption')
           if (isEncrypted(msg.content)) {
@@ -452,7 +452,6 @@ export class FirestoreAdapter implements DatabaseAdapter {
             }
           }
         } catch (error) {
-          // If decryption fails for any reason, fall back to stored content
           decryptedContent = msg.content
         }
       }
@@ -507,9 +506,8 @@ export class FirestoreAdapter implements DatabaseAdapter {
     
     const msg = snapshot.data()
     
-    // Decrypt message content on server or client
     let decryptedContent = msg.content
-    if (msg.content && typeof msg.content === 'string') {
+    if (typeof window !== 'undefined') {
       try {
         const { decrypt, isEncrypted } = await import('@/lib/encryption')
         if (isEncrypted(msg.content)) {
@@ -556,13 +554,12 @@ export class FirestoreAdapter implements DatabaseAdapter {
     const messagesRef = collection(db, 'messages')
     const newMessageRef = doc(messagesRef)
     
-    // Ensure content is encrypted before storing (server and client)
     let encryptedContent = data.content
-    if (data.content && typeof data.content === 'string') {
+    if (typeof window !== 'undefined') {
       try {
         const { encrypt, isEncrypted } = await import('@/lib/encryption')
         if (!isEncrypted(data.content)) {
-          encryptedContent = encrypt(data.content, data.chatId || null, data.groupId || null)
+          encryptedContent = encrypt(data.content)
         }
       } catch (error) {
         encryptedContent = data.content
