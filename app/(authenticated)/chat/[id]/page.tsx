@@ -88,7 +88,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   // Transformare mesaje pentru UI - merge optimistic + realtime
   const formattedMessages: Message[] = useMemo(() => {
     const identifier = isGroupChat ? `group:${id}` : `chat:${id}`
-    const cachedMessages = queryClient.getQueryData<Message[]>(['messages', identifier]) || []
+    const cachedMessages = queryClient.getQueryData<Message[]>(['messages', identifier, 'initial']) || []
     
     // Merge cached (optimistic) messages with realtime messages
     const messageMap = new Map<string, Message>()
@@ -156,9 +156,9 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       })
     })
     
-    // Finally: Add any other cached messages that aren't in realtime (shouldn't happen normally)
-    cachedMessages.forEach((msg) => {
-      if (!messageMap.has(msg.id) && msg.status !== 'sending' && msg.status !== 'error') {
+    // Finally: Add any other cached messages that aren't in realtime (optimistic messages)
+    cachedMessages.forEach((msg: any) => {
+      if (!messageMap.has(msg.id) && (msg.status === 'sending' || msg.status === 'error')) {
         messageMap.set(msg.id, msg)
       }
     })
@@ -214,8 +214,8 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 <ChatAvatar imageUrl={chat?.avatar} name={chat?.name || "Chat"} />
               </div>
               <div className="flex-1 flex flex-col justify-start items-start min-w-0">
-                <h2 className="text-sm sm:text-base font-medium truncate">{chat?.name || "Chat"}</h2>
-                <h2 className="text-xs font-regular text-muted-foreground truncate">Click for more info</h2>
+                <h2 className="text-base sm:text-base font-medium truncate">{chat?.name || "Chat"}</h2>
+                <h2 className="text-sm sm:text-xs font-regular text-muted-foreground truncate">Click for more info</h2>
               </div>
             </button>
           </div>

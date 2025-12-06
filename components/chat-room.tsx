@@ -20,6 +20,9 @@ interface ChatRoomProps {
   onReact?: (messageId: string, emoji: string) => void
   onDelete?: (messageId: string) => void
   isSendingMessage?: boolean
+  onLoadMore?: () => void
+  hasMore?: boolean
+  isLoadingMore?: boolean
 }
 
 export function ChatRoom({
@@ -36,6 +39,9 @@ export function ChatRoom({
   onReact,
   onDelete,
   isSendingMessage = false,
+  onLoadMore,
+  hasMore = false,
+  isLoadingMore = false,
 }: ChatRoomProps) {
   const isMobile = useIsMobile()
   
@@ -109,6 +115,9 @@ export function ChatRoom({
           onReply={onReply}
           onReact={onReact}
           onDelete={onDelete}
+          onLoadMore={onLoadMore}
+          hasMore={hasMore}
+          isLoadingMore={isLoadingMore}
         />
       </div>
 

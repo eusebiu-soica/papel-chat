@@ -19,7 +19,8 @@ import {
   onSnapshot,
   QuerySnapshot,
   DocumentData,
-  QueryDocumentSnapshot
+  QueryDocumentSnapshot,
+  Query
 } from "firebase/firestore"
 import { app } from "@/lib/firebase/config"
 
@@ -255,16 +256,44 @@ export class FirestoreAdapter implements DatabaseAdapter {
 
   // --- MESSAGE OPERATIONS ---
 
-  async getMessages(params: { chatId?: string; groupId?: string; after?: string; limit?: number }): Promise<MessageWithDetails[]> {
+  async getMessages(params: { chatId?: string; groupId?: string; after?: string; limit?: number; before?: string }): Promise<MessageWithDetails[]> {
     const ref = collection(getDb(), 'messages')
-    let q = query(ref, orderBy('createdAt', 'asc'))
-    if (params.chatId) q = query(ref, where('chatId', '==', params.chatId), orderBy('createdAt', 'asc'))
-    else if (params.groupId) q = query(ref, where('groupId', '==', params.groupId), orderBy('createdAt', 'asc'))
+    let q: Query
     
-    if (params.limit) q = query(q, limit(params.limit))
+    // Build base query - order by createdAt descending to get newest first
+    if (params.before) {
+      // For pagination: fetch messages before the given timestamp
+      const beforeDate = new Date(params.before)
+      const beforeTimestamp = Timestamp.fromDate(beforeDate)
+      
+      if (params.chatId) {
+        q = query(ref, where('chatId', '==', params.chatId), where('createdAt', '<', beforeTimestamp), orderBy('createdAt', 'desc'))
+      } else if (params.groupId) {
+        q = query(ref, where('groupId', '==', params.groupId), where('createdAt', '<', beforeTimestamp), orderBy('createdAt', 'desc'))
+      } else {
+        q = query(ref, where('createdAt', '<', beforeTimestamp), orderBy('createdAt', 'desc'))
+      }
+    } else {
+      // Initial load: get latest messages
+      if (params.chatId) {
+        q = query(ref, where('chatId', '==', params.chatId), orderBy('createdAt', 'desc'))
+      } else if (params.groupId) {
+        q = query(ref, where('groupId', '==', params.groupId), orderBy('createdAt', 'desc'))
+      } else {
+        q = query(ref, orderBy('createdAt', 'desc'))
+      }
+    }
+    
+    // Limit results
+    if (params.limit) {
+      q = query(q, limit(params.limit))
+    }
     
     const snapshot = await getDocs(q)
-    return this.processMessageSnapshot(snapshot, params.chatId, params.groupId)
+    const messages = await this.processMessageSnapshot(snapshot, params.chatId, params.groupId)
+    
+    // Reverse to get chronological order (oldest first) for display
+    return messages.reverse()
   }
 
   async createMessage(data: { content: string; senderId: string; chatId?: string | null; groupId?: string | null; replyToId?: string | null }): Promise<MessageWithDetails> {

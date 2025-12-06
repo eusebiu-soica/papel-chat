@@ -293,7 +293,7 @@ function ChatBubbleComponent({
 
             {/* Sender name - only for group chats and not own messages */}
             {isGroupChat && !isOwn && (
-              <div className="text-xs font-medium mb-0.5" style={{ color: '#00a8ff' }}>
+              <div className="text-sm sm:text-xs font-medium mb-0.5" style={{ color: '#00a8ff' }}>
                 {message.sender.name}
               </div>
             )}
@@ -309,7 +309,7 @@ function ChatBubbleComponent({
               </div>
             )}
 
-            <div className="break-words whitespace-pre-wrap">
+            <div className="break-words whitespace-pre-wrap text-base sm:text-sm">
               {(() => {
                 // Ensure content is decrypted before display
                 const content = message.content || ''
@@ -346,7 +346,7 @@ function ChatBubbleComponent({
 
             {/* Timestamp - bottom right */}
             <div className={cn(
-              "flex items-center justify-end gap-1 mt-0.5 text-[11px]",
+              "flex items-center justify-end gap-1 mt-0.5 text-xs sm:text-[11px]",
               isOwn ? "text-primary-foreground/70" : "text-muted-foreground"
             )}>
               <span>{formatTime(message.timestamp)}</span>
@@ -391,17 +391,14 @@ function ChatBubbleComponent({
       <Drawer open={sheetOpen} onOpenChange={setSheetOpen}>
         <DrawerContent className="pb-safe">
           <DrawerHeader>
-            <DrawerTitle>Message Options</DrawerTitle>
-            <DrawerDescription>
-              {isOwn ? "Your message" : `From ${message.sender.name}`}
-            </DrawerDescription>
+            <DrawerTitle className="text-lg">Message Options</DrawerTitle>
           </DrawerHeader>
           
           <div className="px-4 pb-4 space-y-2">
             {/* Quick reactions */}
-            <div className="flex items-center gap-2 py-2">
-              <span className="text-sm text-muted-foreground">React:</span>
-              <div className="flex items-center gap-2 flex-1">
+            <div className="flex justify-center items-center gap-2 py-2">
+          
+              <div className="flex justify-center items-center gap-2 flex-1">
                 {EMOJI_OPTIONS.map((emoji) => {
                   const isSelected = isReactionSelected(emoji)
                   return (

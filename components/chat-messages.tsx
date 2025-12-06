@@ -36,6 +36,9 @@ interface ChatMessagesProps {
   onReply?: (messageId: string) => void
   onReact?: (messageId: string, emoji: string) => void
   onDelete?: (messageId: string) => void
+  onLoadMore?: () => void
+  hasMore?: boolean
+  isLoadingMore?: boolean
 }
 
 function formatDateLabel(date: Date) {
@@ -68,14 +71,20 @@ export function ChatMessages({
   groupId = null,
   onReply,
   onReact,
-  onDelete
+  onDelete,
+  onLoadMore,
+  hasMore = false,
+  isLoadingMore = false
 }: ChatMessagesProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
+  const messagesStartRef = useRef<HTMLDivElement | null>(null)
   const isUserScrollingRef = useRef(false)
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const wasAtBottomRef = useRef(true)
   const prevMessagesLengthRef = useRef(messages.length)
+  const prevScrollHeightRef = useRef(0)
+  const isLoadingMoreRef = useRef(false)
 
   // Check if user is near bottom (within 100px)
   const isNearBottom = useCallback(() => {
@@ -86,13 +95,25 @@ export function ChatMessages({
     return distanceFromBottom < 100
   }, [])
 
-  // Handle scroll events
+  // Handle scroll events and pagination
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
 
     const handleScroll = () => {
       wasAtBottomRef.current = isNearBottom()
+      
+      // Check if scrolled to top and load more messages
+      if (el.scrollTop < 100 && hasMore && onLoadMore && !isLoadingMoreRef.current) {
+        isLoadingMoreRef.current = true
+        const currentScrollHeight = el.scrollHeight
+        prevScrollHeightRef.current = currentScrollHeight
+        onLoadMore()
+        // Reset flag after a delay
+        setTimeout(() => {
+          isLoadingMoreRef.current = false
+        }, 1000)
+      }
       
       // Clear existing timeout
       if (scrollTimeoutRef.current) {
@@ -115,7 +136,18 @@ export function ChatMessages({
         clearTimeout(scrollTimeoutRef.current)
       }
     }
-  }, [isNearBottom])
+  }, [isNearBottom, hasMore, onLoadMore])
+  
+  // Maintain scroll position when loading more messages
+  useEffect(() => {
+    if (isLoadingMore && containerRef.current && prevScrollHeightRef.current > 0) {
+      const el = containerRef.current
+      const newScrollHeight = el.scrollHeight
+      const scrollDiff = newScrollHeight - prevScrollHeightRef.current
+      el.scrollTop = el.scrollTop + scrollDiff
+      prevScrollHeightRef.current = 0
+    }
+  }, [isLoadingMore, messages.length])
 
   // Auto-scroll to bottom only if:
   // 1. User was at bottom before new message
@@ -172,6 +204,13 @@ export function ChatMessages({
       )}
     >
       <div className="flex flex-col gap-0.5 px-2 sm:px-3 md:px-4 py-3 sm:py-4">
+        {/* Load more indicator */}
+        {isLoadingMore && (
+          <div ref={messagesStartRef} className="flex items-center justify-center py-2">
+            <div className="text-xs text-muted-foreground">Loading older messages...</div>
+          </div>
+        )}
+        
         {visibleMessages.map((message, idx) => {
             const msgDate = toDate(message.timestamp)
             const prev = visibleMessages[idx - 1]

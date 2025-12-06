@@ -40,11 +40,11 @@ export default function Sidebar() {
     }, [realtimeChats, currentUserId, setChats])
 
     return (
-        <Card className="relative rounded-none bg-transparent border-none w-[420px] max-w-[420px]  p-[8px] gap-0">
-            <CardHeader className="px-0">
+        <Card className="relative rounded-none bg-transparent border-none w-full md:w-[420px] md:max-w-[420px] p-2 md:p-[8px] gap-0 h-full flex flex-col">
+            <CardHeader className="px-0 flex-shrink-0">
                 <SidebarHeader />
             </CardHeader>
-            <CardContent className="px-0 max-h-[calc(100vh-85px)] overflow-y-auto pb-24">
+            <CardContent className="px-0 flex-1 min-h-0 overflow-y-auto pb-20 md:pb-24">
                 {isLoading && realtimeChats.length === 0 ? (
                   <div className="p-4 text-center text-muted-foreground text-sm">Loading chats...</div>
                 ) : (
@@ -61,8 +61,8 @@ export default function Sidebar() {
                   })} />
                 )}
             </CardContent>
-            <CardFooter className="px-0 absolute bottom-4 right-4 mb-4 mr-4 pointer-events-none">
-                <div className="pointer-events-auto">
+            <CardFooter className="px-0 flex-shrink-0 fixed md:absolute bottom-4 right-4 md:right-4 left-4 md:left-auto mb-4 md:mb-4 pointer-events-none z-50 safe-area-bottom">
+                <div className="pointer-events-auto ml-auto md:ml-0">
                   <AddNew />
                 </div>
             </CardFooter>
