@@ -263,7 +263,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
     // Build base query - order by createdAt descending to get newest first
     if (params.before) {
       // For pagination: fetch messages before the given timestamp
-      const beforeDate = params.before instanceof Date ? params.before : new Date(params.before)
+      const beforeDate = new Date(params.before)
       const beforeTimestamp = Timestamp.fromDate(beforeDate)
       
       if (params.chatId) {
