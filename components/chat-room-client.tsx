@@ -7,18 +7,7 @@ import type { Message } from "./chat-messages"
 import { toast } from 'sonner'
 import { FirestoreAdapter } from "@/lib/db/firestore-adapter"
 import type { ChatWithDetails, MessageWithDetails } from "@/lib/db/adapter"
-import { Loader2 } from "lucide-react"
 
-// Importuri pentru Dialog
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
 
 const adapter = new FirestoreAdapter();
 
@@ -43,11 +32,8 @@ export default function ChatRoomClient({
   onOptimisticUpdate
 }: ChatRoomClientProps) {
   const [replyingTo, setReplyingTo] = useState<{ id: string; content: string; senderName: string } | null>(null)
-  
-  // State pentru modalul de ștergere mesaj
-  const [messageToDelete, setMessageToDelete] = useState<string | null>(null)
-  const [isDeletingMessage, setIsDeletingMessage] = useState(false)
-
+  const [hasMore, setHasMore] = useState(true)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
   const queryClient = useQueryClient()
 
   const handleSendMessage = useCallback(async (messageContent: string, replyToId?: string) => {
@@ -76,7 +62,7 @@ export default function ChatRoomClient({
     };
 
     // Update messages cache immediately
-    queryClient.setQueryData<MessageWithDetails[]>(['messages', identifier], (old: any[] = []) => {
+    queryClient.setQueryData<MessageWithDetails[]>(['messages', identifier, 'initial'], (old: any[] = []) => {
       // Check if temp message already exists
       const exists = old.some(m => m.id === tempId)
       if (exists) return old
@@ -127,7 +113,7 @@ export default function ChatRoomClient({
       });
 
       // Update the temp message with real message data and mark as sent
-      queryClient.setQueryData<MessageWithDetails[]>(['messages', identifier], (old: any[] = []) => {
+      queryClient.setQueryData<MessageWithDetails[]>(['messages', identifier, 'initial'], (old: any[] = []) => {
         return old.map(msg => {
           if (msg.id === tempId) {
             // Replace temp message with real one, mark as sent
@@ -161,7 +147,7 @@ export default function ChatRoomClient({
       toast.error('Failed to send message');
       
       // Mark message as error
-      queryClient.setQueryData<MessageWithDetails[]>(['messages', identifier], (old: any[] = []) => {
+      queryClient.setQueryData<MessageWithDetails[]>(['messages', identifier, 'initial'], (old: any[] = []) => {
         return old.map(msg => {
           if (msg.id === tempId) {
             return { ...msg, status: 'error' } as any
@@ -187,9 +173,9 @@ export default function ChatRoomClient({
 
   const handleReact = useCallback(async (messageId: string, emoji: string) => {
     const identifier = isGroupChat ? `group:${id}` : `chat:${id}`
-    const previousMessages = queryClient.getQueryData<any[]>(['messages', identifier]);
+    const previousMessages = queryClient.getQueryData<any[]>(['messages', identifier, 'initial']);
 
-    queryClient.setQueryData(['messages', identifier], (old: any[] = []) => {
+    queryClient.setQueryData(['messages', identifier, 'initial'], (old: any[] = []) => {
       return old.map(msg => {
         if (msg.id === messageId) {
           const existingReaction = msg.reactions?.find((r: any) => r.userId === currentUserId && r.emoji === emoji);
@@ -217,45 +203,90 @@ export default function ChatRoomClient({
       if (err.message !== 'Reaction removed') {
          console.error('Error reacting', err);
          if (previousMessages) {
-            queryClient.setQueryData(['messages', identifier], previousMessages);
+            queryClient.setQueryData(['messages', identifier, 'initial'], previousMessages);
          }
       }
     }
   }, [id, currentUserId, isGroupChat, queryClient]);
 
-  // Funcția declanșată când apeși "Delete" din meniul mesajului
-  const handleRequestDelete = useCallback((messageId: string) => {
-    setMessageToDelete(messageId) // Doar deschidem modalul
-  }, [])
-
-  // Funcția care execută efectiv ștergerea (apelată din modal)
-  const confirmDeleteMessage = async () => {
-    if (!messageToDelete) return
-
+  // Funcția care execută ștergerea direct (fără modal)
+  const handleRequestDelete = useCallback(async (messageId: string) => {
     try {
-      setIsDeletingMessage(true)
       const identifier = isGroupChat ? `group:${id}` : `chat:${id}`
       
       // Optimistic delete
-      queryClient.setQueryData(['messages', identifier], (old: any[] = []) => {
+      queryClient.setQueryData(['messages', identifier, 'initial'], (old: any[] = []) => {
         return old.map(msg => {
-          if (msg.id === messageToDelete) {
+          if (msg.id === messageId) {
             return { ...msg, deletedForEveryone: true, content: '' };
           }
           return msg;
         });
       });
 
-      await adapter.deleteMessage(messageToDelete)
-      setMessageToDelete(null) // Închidem modalul
+      await adapter.deleteMessage(messageId)
     } catch (err) {
       console.error('Error deleting message', err)
       toast.error('Failed to delete message')
-      // Rollback logic could be added here
-    } finally {
-      setIsDeletingMessage(false)
     }
-  }
+  }, [id, isGroupChat, queryClient])
+
+  // Load more messages when scrolling up
+  const handleLoadMore = useCallback(async () => {
+    if (isLoadingMore || !hasMore || messages.length === 0) return
+    
+    setIsLoadingMore(true)
+    try {
+      const identifier = isGroupChat ? `group:${id}` : `chat:${id}`
+      const oldestMessage = messages[0]
+      
+      if (!oldestMessage) {
+        setHasMore(false)
+        return
+      }
+
+      const oldestDate = oldestMessage.timestamp ? new Date(oldestMessage.timestamp) : new Date()
+      
+      // Fetch 20 more messages before the oldest one
+      const moreMessages = await adapter.getMessages({
+        chatId: isGroupChat ? undefined : id,
+        groupId: isGroupChat ? id : undefined,
+        before: oldestDate.toISOString(),
+        limit: 20
+      })
+
+      if (moreMessages.length < 20) {
+        setHasMore(false)
+      }
+
+      // Merge with existing messages
+      queryClient.setQueryData<MessageWithDetails[]>(['messages', identifier, 'initial'], (old: any[] = []) => {
+        const messageMap = new Map<string, any>()
+        
+        // Add existing messages
+        old.forEach(msg => messageMap.set(msg.id, msg))
+        
+        // Add new messages
+        moreMessages.forEach(msg => {
+          if (!messageMap.has(msg.id)) {
+            messageMap.set(msg.id, msg)
+          }
+        })
+        
+        // Return sorted array (oldest first)
+        return Array.from(messageMap.values()).sort((a, b) => {
+          const timeA = new Date(a.timestamp || a.createdAt).getTime()
+          const timeB = new Date(b.timestamp || b.createdAt).getTime()
+          return timeA - timeB
+        })
+      })
+    } catch (err) {
+      console.error('Error loading more messages', err)
+      toast.error('Failed to load more messages')
+    } finally {
+      setIsLoadingMore(false)
+    }
+  }, [id, isGroupChat, messages, isLoadingMore, hasMore, queryClient])
 
   return (
     <>
@@ -271,44 +302,12 @@ export default function ChatRoomClient({
       onCancelReply={() => setReplyingTo(null)}
       onReply={handleReply}
       onReact={handleReact}
-        onDelete={handleRequestDelete} // Folosim noua funcție care deschide modalul
-        isSendingMessage={false}
-      />
-
-      {/* MODAL CONFIRMARE ȘTERGERE MESAJ */}
-      <Dialog open={!!messageToDelete} onOpenChange={(open) => !open && setMessageToDelete(null)}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Delete Message</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete this message? <br /> This will remove it for everyone in the chat.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-1">
-            <Button 
-              variant="ghost" 
-              onClick={() => setMessageToDelete(null)}
-              disabled={isDeletingMessage}
-            >
-              Cancel
-            </Button>
-            <Button 
-              variant="destructive" 
-              onClick={confirmDeleteMessage}
-              disabled={isDeletingMessage}
-            >
-              {isDeletingMessage ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Deleting...
-                </>
-              ) : (
-                "Delete for Everyone"
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      onDelete={handleRequestDelete}
+      isSendingMessage={false}
+      onLoadMore={handleLoadMore}
+      hasMore={hasMore}
+      isLoadingMore={isLoadingMore}
+    />
     </>
   )
 }

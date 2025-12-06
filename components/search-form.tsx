@@ -13,9 +13,10 @@ export default function SearchForm({ ...props }: React.ComponentProps<"form">) {
           <Input
             id="search"
             placeholder="Search..."
-            className="pl-7 sm:pl-8 pr-2 border-none text-xs sm:text-sm h-8 sm:h-9"
+            className="pl-9 sm:pl-8 pr-2 border-none text-base sm:text-sm h-11 sm:h-9 w-full"
+            autoComplete="off"
           />
-          <Search className="pointer-events-none absolute top-1/2 left-2 size-3 sm:size-4 -translate-y-1/2 opacity-50 select-none" />
+          <Search className="pointer-events-none absolute top-1/2 left-3 sm:left-2 size-4 sm:size-4 -translate-y-1/2 opacity-50 select-none" />
         </FieldContent>
       </Field>
     </form>

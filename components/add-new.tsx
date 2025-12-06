@@ -97,8 +97,8 @@ export default function AddNew() {
         {icon}
       </div>
       <div className="space-y-0.5 sm:space-y-1 min-w-0">
-        <h3 className="font-semibold text-sm sm:text-base">{label}</h3>
-        <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">{description}</p>
+        <h3 className="font-semibold text-base sm:text-base">{label}</h3>
+        <p className="text-sm sm:text-sm text-muted-foreground leading-relaxed">{description}</p>
       </div>
     </button>
   ))
@@ -135,9 +135,9 @@ export default function AddNew() {
       {chatType === "single" && (
         <div className="space-y-2 pt-2">
           <div className="flex items-center justify-between gap-2">
-            <label className="text-xs sm:text-sm font-medium">Add participant</label>
+            <label className="text-base sm:text-sm font-medium">Add participant</label>
             {selectedUser && (
-              <Button variant="ghost" size="sm" onClick={() => setSelectedUser(null)} className="h-7 sm:h-8 text-xs">Clear</Button>
+              <Button variant="ghost" size="sm" onClick={() => setSelectedUser(null)} className="h-9 sm:h-8 text-sm sm:text-xs">Clear</Button>
             )}
           </div>
           {selectedUser ? (
@@ -148,8 +148,8 @@ export default function AddNew() {
                   <AvatarFallback>{selectedUser.name?.charAt(0).toUpperCase()}</AvatarFallback>
                 </Avatar>
                 <div className="space-y-0.5">
-                  <p className="text-sm font-medium">{selectedUser.name}</p>
-                  <p className="text-xs text-muted-foreground">@{selectedUser.username || "unknown"}</p>
+                  <p className="text-base sm:text-sm font-medium">{selectedUser.name}</p>
+                  <p className="text-sm sm:text-xs text-muted-foreground">@{selectedUser.username || "unknown"}</p>
                 </div>
               </div>
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSelectedUser(null)}>
@@ -162,7 +162,8 @@ export default function AddNew() {
                 value={participantSearch}
                 onChange={(e) => setParticipantSearch(e.target.value)}
                 placeholder="Search by username..."
-                className="bg-muted/50 text-xs sm:text-sm"
+                className="bg-muted/50 text-base sm:text-sm h-12 sm:h-10"
+                autoComplete="off"
               />
               {isSearchingUsers ? (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground px-1 py-1.5">
@@ -186,8 +187,8 @@ export default function AddNew() {
                           <AvatarFallback>{user.name?.charAt(0).toUpperCase()}</AvatarFallback>
                         </Avatar>
                         <div>
-                          <p className="text-sm font-medium">{user.name}</p>
-                          <p className="text-xs text-muted-foreground">@{user.username || "unknown"}</p>
+                          <p className="text-base sm:text-sm font-medium">{user.name}</p>
+                          <p className="text-sm sm:text-xs text-muted-foreground">@{user.username || "unknown"}</p>
                         </div>
                       </button>
                     ))}
@@ -264,21 +265,37 @@ export default function AddNew() {
     return (
       <Drawer open={open} onOpenChange={setOpen}>
         <DrawerTrigger asChild>
-          <Button variant="default" className="rounded-full size-11 sm:size-12" size="icon-lg">
-            <Plus className="size-4 sm:size-5" />
+          <Button variant="default" className="rounded-full size-13 sm:size-12" size="icon-lg">
+            <Plus className="size-5" />
           </Button>
         </DrawerTrigger>
-        <DrawerContent>
-          <div className="px-4 py-4 sm:py-6 pb-16">
-            <DrawerTitle className="text-lg font-semibold mb-4">Create new</DrawerTitle>
-            {content}
-            <div className="mt-4 flex flex-col gap-2">
-              {chatType === 'room' && (
-                <Input value={roomName} onChange={(e) => setRoomName(e.target.value)} placeholder="Room name" />
-              )}
-              <Button onClick={handleCreate} disabled={createMutation.isPending}>
-                {createMutation.isPending ? "Creating..." : "Create"}
-              </Button>
+        <DrawerContent className="h-[95vh] max-h-[95vh]">
+          <div className="flex flex-col h-full overflow-hidden">
+            <div className="flex-shrink-0 px-4 pt-4 pb-2 border-b border-border">
+              <DrawerTitle className="text-xl font-semibold">Create new</DrawerTitle>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-4">
+              {content}
+            </div>
+            <div className="flex-shrink-0 px-4 py-4 border-t border-border bg-background safe-area-bottom">
+              <div className="flex flex-col gap-3">
+                {chatType === 'room' && (
+                  <Input 
+                    value={roomName} 
+                    onChange={(e) => setRoomName(e.target.value)} 
+                    placeholder="Room name"
+                    className="text-base h-12"
+                    autoComplete="off"
+                  />
+                )}
+                <Button 
+                  onClick={handleCreate} 
+                  disabled={createMutation.isPending}
+                  className="h-12 text-base font-medium"
+                >
+                  {createMutation.isPending ? "Creating..." : "Create"}
+                </Button>
+              </div>
             </div>
           </div>
         </DrawerContent>
