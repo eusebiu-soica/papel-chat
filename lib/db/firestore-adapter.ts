@@ -23,6 +23,10 @@ import {
   Query
 } from "firebase/firestore"
 import { app } from "@/lib/firebase/config"
+// 🚀 PERFORMANCE: Static import of encryption functions to avoid dynamic require() in render
+// This ensures decryption happens once when data arrives, not on every UI render
+import { decrypt, encrypt, isEncrypted } from '@/lib/encryption'
+import { extractBase64FromDataUri, createDataUriFromBase64 } from '@/lib/image-utils'
 
 // Lazy initialization of Firestore - only initialize if app is available
 let db: ReturnType<typeof getFirestore> | null = null
@@ -51,7 +55,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
 
   private normalizeUsername(username?: string | null): string {
     if (!username) return ""
-    return username.toLowerCase().replace(/[^a-z0-9_]/g, "").replace(/_+/g, "_").replace(/^_+|_+$/g, "")
+    return username
   }
 
   private cleanUsername(username: string): string {
@@ -177,11 +181,10 @@ export class FirestoreAdapter implements DatabaseAdapter {
 
       if (data.lastMessage) {
         const lm = data.lastMessage
-        // Decrypt last message for initial fetch - use chatId (docSnap.id)
+        // 🚀 PERFORMANCE: Decrypt at adapter level (not in UI) - use chatId (docSnap.id)
         let content = lm.content || ''
-        if (content && typeof window !== 'undefined' && content.startsWith('ENC:')) {
+        if (content && isEncrypted(content)) {
            try {
-             const { decrypt } = await import('@/lib/encryption')
              // Use chatId (docSnap.id) for decryption
              const decrypted = decrypt(content, docSnap.id, null)
              // Only use if decryption succeeded
@@ -299,18 +302,34 @@ export class FirestoreAdapter implements DatabaseAdapter {
   async createMessage(data: { content: string; senderId: string; chatId?: string | null; groupId?: string | null; replyToId?: string | null; imageUrl?: string | null }): Promise<MessageWithDetails> {
     const ref = doc(collection(getDb(), 'messages'))
     let encryptedContent = data.content
+    let encryptedImageUrl: string | null = null
     
+    // 🚀 PERFORMANCE: Use static import instead of dynamic import
     // CRITICAL: Must encrypt with the same chatId/groupId that will be used for decryption!
-    if (typeof window !== 'undefined') {
-      try {
-        const { encrypt, isEncrypted } = await import('@/lib/encryption')
-        if (!isEncrypted(data.content)) {
-          // Pass chatId/groupId to encrypt so decryption uses the same key
-          encryptedContent = encrypt(data.content, data.chatId || null, data.groupId || null)
-        }
-      } catch (e) { 
-        console.error('Encryption error in createMessage:', e)
+    try {
+      if (!isEncrypted(data.content)) {
+        // Pass chatId/groupId to encrypt so decryption uses the same key
+        encryptedContent = encrypt(data.content, data.chatId || null, data.groupId || null)
       }
+    } catch (e) { 
+      console.error('Encryption error in createMessage:', e)
+    }
+    
+    // 🖼️ NEW: Encrypt base64 image data if it's a data URI (not a regular URL)
+    // This allows storing images encrypted in Firestore instead of using Storage
+    if (data.imageUrl && data.imageUrl.startsWith('data:')) {
+      try {
+        // Extract base64 string from data URI and encrypt it
+        const base64String = extractBase64FromDataUri(data.imageUrl)
+        encryptedImageUrl = encrypt(base64String, data.chatId || null, data.groupId || null)
+      } catch (e) {
+        console.error('Error encrypting image:', e)
+        // Fallback: store as-is if encryption fails
+        encryptedImageUrl = data.imageUrl
+      }
+    } else {
+      // Backward compatibility: if it's a regular URL (from Storage), keep it as is
+      encryptedImageUrl = data.imageUrl || null
     }
     
     const now = Timestamp.now()
@@ -320,7 +339,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
       chatId: data.chatId || null,
       groupId: data.groupId || null,
       replyToId: data.replyToId || null,
-      imageUrl: data.imageUrl || null,
+      imageUrl: encryptedImageUrl,
       deletedForEveryone: false,
       deletedAt: null,
       createdAt: now,
@@ -542,10 +561,10 @@ export class FirestoreAdapter implements DatabaseAdapter {
           const lm = data.lastMessage
           let content = lm.content || ''
           
+          // 🚀 PERFORMANCE: Decrypt at adapter level using static import
           // CRITICAL: Decrypt using the chat's ID (docSnap.id is the chatId)
-          if (content && typeof window !== 'undefined' && content.startsWith('ENC:')) {
+          if (content && isEncrypted(content)) {
             try {
-              const { decrypt } = await import('@/lib/encryption')
               // Use chatId (docSnap.id) for decryption - this is a chat, not a group
               const decrypted = decrypt(content, docSnap.id, null)
               // Only use if decryption succeeded
@@ -610,7 +629,8 @@ export class FirestoreAdapter implements DatabaseAdapter {
       if (u) usersMap.set(uid, u)
     }))
 
-    // FIX: Using Promise.all for the map to ensure async decryption completes
+    // 🚀 PERFORMANCE: Decrypt messages at adapter level (not in UI) using static import
+    // This prevents blocking the UI thread on every render
     const messagePromises = snapshot.docs.map(async (docSnap) => {
       const m = docSnap.data()
       let content = m.content || ''
@@ -619,10 +639,9 @@ export class FirestoreAdapter implements DatabaseAdapter {
       const msgChatId = m.chatId || null
       const msgGroupId = m.groupId || null
       
-      // ALWAYS decrypt if content starts with ENC:
-      if (content && typeof window !== 'undefined' && content.startsWith('ENC:')) {
+      // ALWAYS decrypt if content is encrypted - do it once here, not in the UI
+      if (content && isEncrypted(content)) {
         try {
-          const { decrypt } = await import('@/lib/encryption')
           // Use the message's own chatId/groupId for decryption
           const decrypted = decrypt(content, msgChatId, msgGroupId)
           // Only use if decryption succeeded (different and not still encrypted)
@@ -642,6 +661,24 @@ export class FirestoreAdapter implements DatabaseAdapter {
         }
       }
 
+      // 🖼️ NEW: Decrypt image data if it's encrypted (base64 stored in Firestore)
+      // Backward compatibility: if it's a regular URL (from Storage), keep it as is
+      let imageUrl: string | null = m.imageUrl || null
+      if (imageUrl && isEncrypted(imageUrl)) {
+        try {
+          // Decrypt the base64 string
+          const decryptedBase64 = decrypt(imageUrl, msgChatId, msgGroupId)
+          // Convert back to data URI for display
+          if (decryptedBase64 && decryptedBase64 !== imageUrl && !decryptedBase64.startsWith('ENC:')) {
+            imageUrl = createDataUriFromBase64(decryptedBase64, 'image/jpeg')
+          }
+        } catch (e) {
+          console.error('Error decrypting image:', e, 'messageId:', docSnap.id)
+          // If decryption fails, set to null to avoid showing broken image
+          imageUrl = null
+        }
+      }
+
       const msg: MessageWithDetails = {
           id: docSnap.id,
         content,
@@ -649,7 +686,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
         chatId: m.chatId,
         groupId: m.groupId,
         replyToId: m.replyToId,
-        imageUrl: m.imageUrl || null,
+        imageUrl,
         deletedForEveryone: m.deletedForEveryone || false,
         deletedAt: m.deletedAt ? this.toDate(m.deletedAt) : null,
         createdAt: this.toDate(m.createdAt),
@@ -659,8 +696,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
         replyTo: null
       }
 
-      // Load reactions
-      msg.reactions = await this.getReactionsByMessageId(docSnap.id)
+      // Reactions will be loaded in batch below (optimization)
       
       // Load Reply (Basic)
       if (m.replyToId) {
@@ -669,13 +705,12 @@ export class FirestoreAdapter implements DatabaseAdapter {
          const replyRef = await getDoc(doc(getDb(), 'messages', m.replyToId))
          if (replyRef.exists()) {
             const rd = replyRef.data()
-            // Decrypt reply content too - use reply's own chatId/groupId
+            // 🚀 PERFORMANCE: Decrypt reply content at adapter level using static import
             let rContent = rd.content
             const replyChatId = rd.chatId || null
             const replyGroupId = rd.groupId || null
-            if (rContent && typeof window !== 'undefined' && rContent.startsWith('ENC:')) {
+            if (rContent && isEncrypted(rContent)) {
                 try {
-                  const { decrypt } = await import('@/lib/encryption')
                   const decrypted = decrypt(rContent, replyChatId, replyGroupId)
                   // Only use if decryption succeeded
                   if (decrypted && decrypted !== rContent && !decrypted.startsWith('ENC:')) {
@@ -686,6 +721,20 @@ export class FirestoreAdapter implements DatabaseAdapter {
             }
             }
 
+            // 🖼️ Decrypt reply image if encrypted
+            let rImageUrl: string | null = rd.imageUrl || null
+            if (rImageUrl && isEncrypted(rImageUrl)) {
+              try {
+                const decryptedBase64 = decrypt(rImageUrl, replyChatId, replyGroupId)
+                if (decryptedBase64 && decryptedBase64 !== rImageUrl && !decryptedBase64.startsWith('ENC:')) {
+                  rImageUrl = createDataUriFromBase64(decryptedBase64, 'image/jpeg')
+                }
+              } catch (e) {
+                console.error('Error decrypting reply image:', e)
+                rImageUrl = null
+              }
+            }
+
             msg.replyTo = {
                id: replyRef.id,
                content: rContent,
@@ -694,6 +743,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
                updatedAt: this.toDate(rd.updatedAt),
                sender: await this.getUserById(rd.senderId) || undefined,
                chatId: rd.chatId, groupId: rd.groupId, deletedForEveryone: rd.deletedForEveryone,
+               imageUrl: rImageUrl,
                reactions: [], replyToId: null, replyTo: null, deletedAt: null
             }
          }
@@ -702,7 +752,51 @@ export class FirestoreAdapter implements DatabaseAdapter {
       return msg
     })
 
-    return Promise.all(messagePromises)
+    const messages = await Promise.all(messagePromises)
+    
+    // 🚀 PERFORMANCE OPTIMIZATION: Batch fetch reactions for all messages at once
+    // Instead of making N individual requests (one per message), batch them in groups of 10
+    // This reduces network latency significantly
+    if (messages.length > 0) {
+      const messageIds = messages.map(m => m.id)
+      const reactionsRef = collection(getDb(), 'message_reactions')
+      const reactionPromises: Promise<MessageReaction[]>[] = []
+      
+      // Process in batches of 10 (Firestore 'in' query limit)
+      for (let i = 0; i < messageIds.length; i += 10) {
+        const batch = messageIds.slice(i, i + 10)
+        const q = query(reactionsRef, where('messageId', 'in', batch), orderBy('createdAt', 'asc'))
+        reactionPromises.push(
+          getDocs(q).then(snap => 
+            snap.docs.map(d => ({
+              id: d.id,
+              ...d.data(),
+              createdAt: this.toDate(d.data().createdAt)
+            } as MessageReaction))
+          )
+        )
+      }
+      
+      const allReactions = (await Promise.all(reactionPromises)).flat()
+      
+      // Group reactions by messageId
+      const reactionsByMessage = new Map<string, MessageReaction[]>()
+      allReactions.forEach(reaction => {
+        const msgId = reaction.messageId
+        if (!reactionsByMessage.has(msgId)) {
+          reactionsByMessage.set(msgId, [])
+        }
+        reactionsByMessage.get(msgId)!.push(reaction)
+      })
+
+      // Assign reactions to messages
+      return messages.map(msg => ({
+        ...msg,
+        reactions: (reactionsByMessage.get(msg.id) || []).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      }))
+    }
+
+    return messages
   }
   
   // Missing methods placeholders for interface compliance

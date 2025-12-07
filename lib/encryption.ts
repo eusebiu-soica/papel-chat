@@ -5,6 +5,10 @@ import CryptoJS from 'crypto-js'
 
 const ENCRYPTION_PREFIX = 'ENC:'
 
+// 🚀 PERFORMANCE OPTIMIZATION: Cache encryption keys to avoid recalculating PBKDF2 on every call
+// This prevents thousands of expensive cryptographic operations per second
+const keyCache: Record<string, string> = {}
+
 // Get master secret used to derive chat keys.
 // Security notes:
 // - On the client, we MUST use NEXT_PUBLIC_ENCRYPTION_SECRET (Next.js only exposes NEXT_PUBLIC_* to client)
@@ -48,18 +52,31 @@ function getChatEncryptionKey(chatId: string | null, groupId: string | null): st
   // Use chatId or groupId to derive a shared key
   // All users in the same chat will generate the same key
   const contextId = chatId || groupId || 'default'
+
+  // 🚀 OPTIMIZATION: Check if we already have the key cached
+  // This prevents recalculating PBKDF2 (10,000 iterations) for every message in the same chat
+  if (keyCache[contextId]) {
+    return keyCache[contextId]
+  }
+
   const masterSecret = getMasterSecret()
 
   // Use PBKDF2 for key derivation (more secure than SHA256)
   // Parameters: password, salt, iterations, keyLength
   // This makes brute-force attacks much harder
+  // ⚠️ This operation is computationally expensive (10,000 iterations) - we only do it once per chat
   const salt = CryptoJS.SHA256(contextId + 'papel-chat-salt').toString()
   const key = CryptoJS.PBKDF2(contextId + masterSecret, salt, {
     keySize: 256/32, // 256 bits = 8 words
     iterations: 10000 // High iteration count for security
   })
 
-  return key.toString()
+  const keyString = key.toString()
+  
+  // 🚀 Save in cache to avoid recalculating for subsequent messages in the same chat
+  keyCache[contextId] = keyString
+  
+  return keyString
 }
 
 // Encrypt text with chat-specific key

@@ -25,10 +25,20 @@ export default function Sidebar() {
           // Luăm ultimul mesaj
           const lastMsg = chat.messages && chat.messages.length > 0 ? chat.messages[0] : null
           
+          // Determine message preview text
+          let messagePreview = "No messages"
+          if (lastMsg) {
+            if (lastMsg.imageUrl) {
+              messagePreview = "📷 Image"
+            } else if (lastMsg.content) {
+              messagePreview = lastMsg.content
+            }
+          }
+          
           return {
             id: chat.id,
             name: otherUser?.name || "Chat",
-            message: lastMsg?.content || "No messages",
+            message: messagePreview,
             avatar: otherUser?.avatar,
             userId: otherUser?.id || "",
             lastMessageTime: lastMsg?.createdAt || chat.updatedAt
@@ -51,10 +61,21 @@ export default function Sidebar() {
                   <ChatsList chats={realtimeChats.map(chat => {
                     const otherUser = chat.userId1 === currentUserId ? chat.user2 : chat.user1
                     const lastMsg = chat.messages && chat.messages.length > 0 ? chat.messages[0] : null
+                    
+                    // Determine message preview text
+                    let messagePreview = "No messages"
+                    if (lastMsg) {
+                      if (lastMsg.imageUrl) {
+                        messagePreview = "📷 Image"
+                      } else if (lastMsg.content) {
+                        messagePreview = lastMsg.content
+                      }
+                    }
+                    
                     return {
                       id: chat.id,
                       name: otherUser?.name || "Chat",
-                      message: lastMsg?.content || "No messages",
+                      message: messagePreview,
                       imageUrl: otherUser?.avatar,
                       unreadCount: 0 // Poți implementa asta ulterior
                     }
