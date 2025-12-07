@@ -6,12 +6,10 @@ import { Message } from "./chat-messages"
 import { Button } from "./ui/button"
 import React, { useState, useRef, useEffect, memo } from "react"
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "./ui/drawer"
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog" // Asigura-te ca ai DialogTitle/Description pentru accesibilitate
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog"
 import { useIsMobile } from "@/hooks/use-mobile"
-import Image from "next/image" // Optimizare thumbnail
-// Importam libraria de zoom
+import Image from "next/image"
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch"
-import { VisuallyHidden } from "@radix-ui/react-visually-hidden"
 import { toast } from 'sonner'
 
 interface ChatBubbleProps {
@@ -356,12 +354,6 @@ function ChatBubbleComponent({
       {/* --- ADVANCED IMAGE VIEWER (Lightbox) --- */}
       <Dialog open={imageViewerOpen} onOpenChange={setImageViewerOpen} modal={true}>
         <DialogContent showCloseButton={false} className="!max-w-none w-screen h-screen p-0 m-0 border-none bg-black/95 flex flex-col items-center justify-center overflow-hidden focus:outline-none z-[9999]">
-          
-          {/* Accessibility Hidden Titles */}
-          <VisuallyHidden>
-            <DialogTitle>Image Preview</DialogTitle>
-            <DialogDescription>Full screen view of shared image</DialogDescription>
-          </VisuallyHidden>
 
           {message.imageUrl && (
              <TransformWrapper
