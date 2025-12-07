@@ -9,8 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from "./ui/drawer"
 import { EmojiPicker } from "./emoji-picker"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage"
-import { app, auth } from "@/lib/firebase/config" 
+import { compressImageToBase64 } from "@/lib/image-utils" 
 
 interface ChatInputProps {
   onSendMessage: (message: string, imageUrl?: string | null) => void
@@ -64,52 +63,23 @@ export function ChatInput({
       return
     }
 
-    // Validate file size (max 10MB)
+    // Validate file size (max 10MB before compression)
     if (file.size > 10 * 1024 * 1024) {
       alert('Image size must be less than 10MB')
       return
     }
 
-    // Check authentication
-    if (!auth || !auth.currentUser) {
-      alert('Please wait for authentication to complete')
-      return
-    }
-
     setUploadingImage(true)
     try {
-      if (!app) {
-        throw new Error('Firebase is not configured')
-      }
-
-      const storage = getStorage(app)
-      const timestamp = Date.now()
-      // Sanitize filename to avoid issues
-      const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_')
-      const fileName = `chat-images/${auth.currentUser.uid}/${timestamp}-${sanitizedName}`
-      const storageRef = ref(storage, fileName)
-
-      // Upload with metadata
-      const metadata = {
-        contentType: file.type,
-        customMetadata: {
-          uploadedBy: auth.currentUser.uid,
-          uploadedAt: new Date().toISOString()
-        }
-      }
-
-      await uploadBytes(storageRef, file, metadata)
-      const downloadURL = await getDownloadURL(storageRef)
+      // 🚀 NEW: Convert image to compressed base64 instead of uploading to Storage
+      // This stores the image encrypted in Firestore, eliminating the need for Storage
+      const base64DataUri = await compressImageToBase64(file)
       
-      setSelectedImage(downloadURL)
+      // Store the base64 data URI (will be encrypted in the adapter)
+      setSelectedImage(base64DataUri)
     } catch (error: any) {
-      console.error('Error uploading image:', error)
-      const errorMessage = error?.code === 'storage/unauthorized' 
-        ? 'You do not have permission to upload images. Please check Firebase Storage rules.'
-        : error?.code === 'storage/canceled'
-        ? 'Upload was canceled'
-        : 'Failed to upload image. Please try again.'
-      alert(errorMessage)
+      console.error('Error processing image:', error)
+      alert(error?.message || 'Failed to process image. Please try again.')
     } finally {
       setUploadingImage(false)
       // Reset file input
