@@ -309,40 +309,56 @@ function ChatBubbleComponent({
               </div>
             )}
 
-            <div className="break-words whitespace-pre-wrap text-base sm:text-sm">
-              {(() => {
-                // Ensure content is decrypted before display
-                const content = message.content || ''
-                if (!content || typeof window === 'undefined') return content
-                
-                // If it starts with ENC:, it's encrypted - MUST decrypt
-                if (content.startsWith('ENC:')) {
-                  try {
-                    const { decrypt } = require('@/lib/encryption')
-                    // Use chatId/groupId from props - these should be correct
-                    const decrypted = decrypt(content, chatId, groupId)
-                    // Only use if decryption succeeded
-                    if (decrypted && decrypted !== content && !decrypted.startsWith('ENC:')) {
-                      return decrypted
+            {/* Image display */}
+            {message.imageUrl && (
+              <div className="mb-2 rounded-lg overflow-hidden max-w-[300px] sm:max-w-[250px]">
+                <img 
+                  src={message.imageUrl} 
+                  alt="Shared image" 
+                  className="w-full h-auto object-contain cursor-pointer hover:opacity-90 transition-opacity"
+                  onClick={() => window.open(message.imageUrl!, '_blank')}
+                  loading="lazy"
+                />
+              </div>
+            )}
+
+            {/* Message content */}
+            {message.content && (
+              <div className="break-words whitespace-pre-wrap text-base sm:text-sm">
+                {(() => {
+                  // Ensure content is decrypted before display
+                  const content = message.content || ''
+                  if (!content || typeof window === 'undefined') return content
+                  
+                  // If it starts with ENC:, it's encrypted - MUST decrypt
+                  if (content.startsWith('ENC:')) {
+                    try {
+                      const { decrypt } = require('@/lib/encryption')
+                      // Use chatId/groupId from props - these should be correct
+                      const decrypted = decrypt(content, chatId, groupId)
+                      // Only use if decryption succeeded
+                      if (decrypted && decrypted !== content && !decrypted.startsWith('ENC:')) {
+                        return decrypted
+                      }
+                      // If decryption failed, log error with details
+                      console.error('❌ Bubble decryption FAILED:', {
+                        messageId: message.id,
+                        chatId,
+                        groupId,
+                        contentPreview: content.substring(0, 50),
+                        decryptedPreview: decrypted?.substring(0, 50)
+                      })
+                      // Still return decrypted even if it failed - better than showing ENC:
+                      return decrypted || content
+                    } catch (e) {
+                      console.error('❌ Bubble decryption exception:', e, 'messageId:', message.id)
+                      return content
                     }
-                    // If decryption failed, log error with details
-                    console.error('❌ Bubble decryption FAILED:', {
-                      messageId: message.id,
-                      chatId,
-                      groupId,
-                      contentPreview: content.substring(0, 50),
-                      decryptedPreview: decrypted?.substring(0, 50)
-                    })
-                    // Still return decrypted even if it failed - better than showing ENC:
-                    return decrypted || content
-                  } catch (e) {
-                    console.error('❌ Bubble decryption exception:', e, 'messageId:', message.id)
-                    return content
                   }
-                }
-                return content
-              })()}
-            </div>
+                  return content
+                })()}
+              </div>
+            )}
 
             {/* Timestamp - bottom right */}
             <div className={cn(

@@ -13,6 +13,7 @@ export interface Message {
     name: string
     avatar?: string
   }
+  imageUrl?: string | null
   replyTo?: {
     id: string
     content: string

@@ -25,6 +25,7 @@ export interface Message {
   chatId?: string | null
   groupId?: string | null
   replyToId?: string | null
+  imageUrl?: string | null
   deletedForEveryone: boolean
   deletedAt?: Date | null
   createdAt: Date
@@ -121,6 +122,7 @@ export interface DatabaseAdapter {
     chatId?: string | null
     groupId?: string | null
     replyToId?: string | null
+    imageUrl?: string | null
   }): Promise<MessageWithDetails>
   updateMessage(id: string, data: Partial<Message>): Promise<Message>
   deleteMessage(id: string): Promise<void>

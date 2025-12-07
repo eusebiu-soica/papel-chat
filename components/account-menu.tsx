@@ -67,7 +67,7 @@ export default function AccountMenu() {
                     <ItemContent className="gap-0 min-w-0">
                         <ItemTitle className="text-base sm:text-base truncate">{user?.fullName || user?.firstName || 'User'}</ItemTitle>
                         <ItemDescription className="text-sm truncate">
-                            {user?.primaryEmailAddress?.emailAddress || 'No email'}
+                            @{user?.username || 'No Username'}
                         </ItemDescription>
                     </ItemContent>
                 </Item>
@@ -139,7 +139,7 @@ export default function AccountMenu() {
                         <ItemContent className="gap-0 min-w-0">
                             <ItemTitle className="text-sm sm:text-base truncate">{user?.fullName || user?.firstName || 'User'}</ItemTitle>
                             <ItemDescription className="text-xs truncate">
-                                {user?.primaryEmailAddress?.emailAddress || 'No email'}
+                                @{user?.username || 'No Username'}
                             </ItemDescription>
                         </ItemContent>
                     </Item>

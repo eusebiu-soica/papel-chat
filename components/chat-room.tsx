@@ -13,7 +13,7 @@ interface ChatRoomProps {
   messages: Message[]
   currentUserId: string
   isGroupChat?: boolean
-  onSendMessage: (message: string, replyToId?: string) => void
+  onSendMessage: (message: string, replyToId?: string, imageUrl?: string | null) => void
   replyingTo?: { id: string; content: string; senderName: string } | null
   onCancelReply?: () => void
   onReply?: (messageId: string) => void
@@ -45,8 +45,8 @@ export function ChatRoom({
 }: ChatRoomProps) {
   const isMobile = useIsMobile()
   
-  const handleSend = (content: string) => {
-    onSendMessage(content, replyingTo?.id)
+  const handleSend = (content: string, imageUrl?: string | null) => {
+    onSendMessage(content, replyingTo?.id, imageUrl)
     onCancelReply?.()
   }
 

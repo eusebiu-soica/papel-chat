@@ -36,7 +36,7 @@ export default function ChatRoomClient({
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const queryClient = useQueryClient()
 
-  const handleSendMessage = useCallback(async (messageContent: string, replyToId?: string) => {
+  const handleSendMessage = useCallback(async (messageContent: string, replyToId?: string, imageUrl?: string | null) => {
     // 1. Optimistic Update (Instant) - Add to messages list immediately
     const tempId = `temp-${Date.now()}-${Math.random().toString(36).substring(7)}`;
     const now = new Date();
@@ -45,6 +45,7 @@ export default function ChatRoomClient({
     const optimisticMsg: Message = {
       id: tempId,
       content: messageContent,
+      imageUrl: imageUrl || null,
       timestamp: now.toISOString(),
       sender: {
         id: currentUserId,
@@ -109,7 +110,8 @@ export default function ChatRoomClient({
         senderId: currentUserId,
         chatId: isGroupChat ? undefined : id,
         groupId: isGroupChat ? id : undefined,
-        replyToId: replyToId
+        replyToId: replyToId,
+        imageUrl: imageUrl || null
       });
 
       // Update the temp message with real message data and mark as sent

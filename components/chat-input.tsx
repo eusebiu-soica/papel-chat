@@ -1,6 +1,6 @@
 "use client"
 
-import { SendHorizontal, Smile, Paperclip, ImageIcon, Loader2 } from "lucide-react"
+import { SendHorizontal, Smile, Paperclip, ImageIcon, Loader2, X } from "lucide-react"
 import { Button } from "./ui/button"
 import { cn } from "@/lib/utils"
 import { useRef, useState, KeyboardEvent } from "react"
@@ -8,11 +8,12 @@ import { Textarea } from "./ui/textarea"
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from "./ui/drawer"
 import { EmojiPicker } from "./emoji-picker"
-// Presupunând că hook-ul useIsMobile funcționează corect
-import { useIsMobile } from "@/hooks/use-mobile" 
+import { useIsMobile } from "@/hooks/use-mobile"
+import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage"
+import { app, auth } from "@/lib/firebase/config" 
 
 interface ChatInputProps {
-  onSendMessage: (message: string) => void
+  onSendMessage: (message: string, imageUrl?: string | null) => void
   className?: string
   placeholder?: string
   replyingTo?: { id: string; content: string; senderName: string } | null
@@ -30,19 +31,96 @@ export function ChatInput({
 }: ChatInputProps) {
   const [message, setMessage] = useState("")
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
+  const [selectedImage, setSelectedImage] = useState<string | null>(null)
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const isMobile = useIsMobile() 
-  const hasText = message.trim().length > 0
+  const hasText = message.trim().length > 0 || selectedImage !== null
 
   // ... (handleSubmit, handleKeyPress, handleInput rămân la fel) ...
   const handleSubmit = () => {
-    if (message.trim() && !isLoading) {
-      onSendMessage(message.trim())
+    if ((message.trim() || selectedImage) && !isLoading && !uploadingImage) {
+      onSendMessage(message.trim() || "", selectedImage)
       setMessage("")
+      setSelectedImage(null)
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto"
+        // Auto-focus after sending
+        setTimeout(() => {
+          textareaRef.current?.focus()
+        }, 0)
       }
     }
+  }
+
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file')
+      return
+    }
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      alert('Image size must be less than 10MB')
+      return
+    }
+
+    // Check authentication
+    if (!auth || !auth.currentUser) {
+      alert('Please wait for authentication to complete')
+      return
+    }
+
+    setUploadingImage(true)
+    try {
+      if (!app) {
+        throw new Error('Firebase is not configured')
+      }
+
+      const storage = getStorage(app)
+      const timestamp = Date.now()
+      // Sanitize filename to avoid issues
+      const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_')
+      const fileName = `chat-images/${auth.currentUser.uid}/${timestamp}-${sanitizedName}`
+      const storageRef = ref(storage, fileName)
+
+      // Upload with metadata
+      const metadata = {
+        contentType: file.type,
+        customMetadata: {
+          uploadedBy: auth.currentUser.uid,
+          uploadedAt: new Date().toISOString()
+        }
+      }
+
+      await uploadBytes(storageRef, file, metadata)
+      const downloadURL = await getDownloadURL(storageRef)
+      
+      setSelectedImage(downloadURL)
+    } catch (error: any) {
+      console.error('Error uploading image:', error)
+      const errorMessage = error?.code === 'storage/unauthorized' 
+        ? 'You do not have permission to upload images. Please check Firebase Storage rules.'
+        : error?.code === 'storage/canceled'
+        ? 'Upload was canceled'
+        : 'Failed to upload image. Please try again.'
+      alert(errorMessage)
+    } finally {
+      setUploadingImage(false)
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
+  const handleImageClick = () => {
+    fileInputRef.current?.click()
   }
 
   const handleKeyPress = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -97,6 +175,15 @@ export function ChatInput({
   
   return (
     <div className={cn("flex w-full flex-col bg-background border-t border-border", className)}>
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleImageSelect}
+        className="hidden"
+      />
+
       {/* Reply preview */}
       {replyingTo && (
         <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-muted/50">
@@ -111,6 +198,26 @@ export function ChatInput({
           >
             ✕
           </button>
+        </div>
+      )}
+
+      {/* Image preview */}
+      {selectedImage && (
+        <div className="relative px-4 py-2 border-b border-border bg-muted/30">
+          <div className="relative inline-block max-w-[200px] rounded-lg overflow-hidden">
+            <img 
+              src={selectedImage} 
+              alt="Selected" 
+              className="max-w-full max-h-[200px] object-contain"
+            />
+            <button
+              onClick={() => setSelectedImage(null)}
+              className="absolute top-1 right-1 bg-background/80 hover:bg-background rounded-full p-1 transition-colors"
+              aria-label="Remove image"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -194,26 +301,21 @@ export function ChatInput({
           />
         </div>
 
-        {/* Butoane Dreapta (Send sau Atașamente) */}
         <div className="flex items-center space-x-1 pr-1">
           {hasText ? (
-            /* Butonul Send - Apare când scrii */
             <Button
               onClick={handleSubmit}
               size="icon"
               disabled={isLoading}
               className={cn(
-                // Am făcut butonul mai mic (p-2, px-3) pentru a se alinia cu butoanele din stânga, dar l-am lăsat lat pe desktop.
-                "h-9 px-6 shrink-0 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground transition-all touch-manipulation active:scale-95",
-                "md:h-8 md:px-8 md:py-1", // Mărime și padding ajustate pentru a arăta bine pe desktop
-                isLoading && "opacity-60 cursor-not-allowed"
+                "h-9 px-6 shrink-0 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground transition-all touch-manipulation active:scale-95 text-sm",
+                "md:h-8 md:px-8 md:py-1",
               )}
               title="Send message"
             >
               {isLoading ? (
                 <>Sending...</>
               ) : (
-                 // Icoana pe mobil, text pe desktop
                  <>Send</>
               )}
                
@@ -226,10 +328,15 @@ export function ChatInput({
                 variant="ghost"
                 size="icon"
                 className={iconButtonClasses}
-                onClick={() => console.log("Image")}
+                onClick={handleImageClick}
+                disabled={uploadingImage}
                 title="Send image"
               >
-                <ImageIcon className="h-4 w-4" />
+                {uploadingImage ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ImageIcon className="h-4 w-4" />
+                )}
               </Button>
               
               {/* Attachment button */}
