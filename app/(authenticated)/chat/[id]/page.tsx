@@ -7,7 +7,7 @@ import type { Message } from "@/components/chat-messages"
 import { useRealtimeMessages } from "@/hooks/use-realtime-messages"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, ChevronLeft } from "lucide-react"
 import { useIsMobile } from "@/hooks/use-mobile"
 import ChatAvatar from "@/components/chat-avatar"
 import UserInfoModal from "@/components/user-info-modal"
@@ -136,6 +136,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       messageMap.set(msg.id, {
         id: msg.id,
         content,
+        imageUrl: msg.imageUrl || null,
         timestamp: safeToISOString(msg.createdAt),
         sender: {
           id: senderId,
@@ -203,7 +204,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             onClick={() => router.push('/')}
             className="h-9 w-9 sm:h-10 sm:w-10 touch-manipulation active:scale-95 flex-shrink-0"
           >
-            <ArrowLeft className="h-5 w-5" />
+            <ChevronLeft className="h-8 w-8" />
           </Button>
             <button
               type="button"
@@ -215,7 +216,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               </div>
               <div className="flex-1 flex flex-col justify-start items-start min-w-0">
                 <h2 className="text-base sm:text-base font-medium truncate">{chat?.name || "Chat"}</h2>
-                <h2 className="text-sm sm:text-xs font-regular text-muted-foreground truncate">Click for more info</h2>
+                {/* <h2 className="text-sm sm:text-xs font-regular text-muted-foreground truncate">Click for more info</h2> */}
               </div>
             </button>
           </div>

@@ -43,7 +43,7 @@ export default function AddNew() {
 
   // Debounce search
   const [debouncedSearch, setDebouncedSearch] = useState("")
-  
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(participantSearch.trim())
@@ -63,7 +63,7 @@ export default function AddNew() {
     },
     staleTime: 1000 * 60,
   })
-  
+
   const userSearchResults = selectedUser ? [] : fetchedUsers
 
   // Reset state on close
@@ -132,73 +132,7 @@ export default function AddNew() {
         />
       </div>
 
-      {chatType === "single" && (
-        <div className="space-y-2 pt-2">
-          <div className="flex items-center justify-between gap-2">
-            <label className="text-base sm:text-sm font-medium">Add participant</label>
-            {selectedUser && (
-              <Button variant="ghost" size="sm" onClick={() => setSelectedUser(null)} className="h-9 sm:h-8 text-sm sm:text-xs">Clear</Button>
-            )}
-          </div>
-          {selectedUser ? (
-            <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
-              <div className="flex items-center gap-3">
-                <Avatar className="h-9 w-9">
-                  <AvatarImage src={selectedUser.avatar || undefined} />
-                  <AvatarFallback>{selectedUser.name?.charAt(0).toUpperCase()}</AvatarFallback>
-                </Avatar>
-                <div className="space-y-0.5">
-                  <p className="text-base sm:text-sm font-medium">{selectedUser.name}</p>
-                  <p className="text-sm sm:text-xs text-muted-foreground">@{selectedUser.username || "unknown"}</p>
-                </div>
-              </div>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSelectedUser(null)}>
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          ) : (
-            <>
-              <Input
-                value={participantSearch}
-                onChange={(e) => setParticipantSearch(e.target.value)}
-                placeholder="Search by username..."
-                className="bg-muted/50 text-base sm:text-sm h-12 sm:h-10"
-                autoComplete="off"
-              />
-              {isSearchingUsers ? (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground px-1 py-1.5">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  <span>Searching...</span>
-                </div>
-              ) : (
-                userSearchResults.length > 0 && (
-                  <div className="rounded-lg border border-border divide-y max-h-[200px] overflow-y-auto">
-                    {userSearchResults.map((user) => (
-                      <button
-                        key={user.id}
-                        onClick={() => {
-                          setSelectedUser(user)
-                          setParticipantSearch("")
-                        }}
-                        className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted/70 transition-colors"
-                      >
-                        <Avatar className="h-8 w-8">
-                          <AvatarImage src={user.avatar || undefined} />
-                          <AvatarFallback>{user.name?.charAt(0).toUpperCase()}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="text-base sm:text-sm font-medium">{user.name}</p>
-                          <p className="text-sm sm:text-xs text-muted-foreground">@{user.username || "unknown"}</p>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )
-              )}
-            </>
-          )}
-        </div>
-      )}
+
     </div>
   ), [chatType, selectedUser, participantSearch, isSearchingUsers, userSearchResults])
 
@@ -223,11 +157,11 @@ export default function AddNew() {
         if (selectedUser) {
           // Check for existing chat first (Client side query)
           const existingChats = await adapter.getChatsByUserId(currentUserId)
-          const existing = existingChats.find(c => 
+          const existing = existingChats.find(c =>
             (c.userId1 === currentUserId && c.userId2 === selectedUser.id) ||
             (c.userId1 === selectedUser.id && c.userId2 === currentUserId)
           )
-          
+
           if (existing) return { type: 'chat', id: existing.id }
 
           const chat = await adapter.createChat({
@@ -280,16 +214,78 @@ export default function AddNew() {
             <div className="flex-shrink-0 px-4 py-4 border-t border-border bg-background safe-area-bottom">
               <div className="flex flex-col gap-3">
                 {chatType === 'room' && (
-                  <Input 
-                    value={roomName} 
-                    onChange={(e) => setRoomName(e.target.value)} 
+                  <Input
+                    value={roomName}
+                    onChange={(e) => setRoomName(e.target.value)}
                     placeholder="Room name"
                     className="text-base h-12"
                     autoComplete="off"
                   />
                 )}
-                <Button 
-                  onClick={handleCreate} 
+                {chatType === "single" && (
+                  <div className="space-y-2 pt-2">
+                  
+                    {selectedUser ? (
+                      <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-9 w-9">
+                            <AvatarImage src={selectedUser.avatar || undefined} />
+                            <AvatarFallback>{selectedUser.name?.charAt(0).toUpperCase()}</AvatarFallback>
+                          </Avatar>
+                          <div className="space-y-0.5">
+                            <p className="text-base sm:text-sm font-medium">{selectedUser.name}</p>
+                            <p className="text-sm sm:text-xs text-muted-foreground">@{selectedUser.username || "unknown"}</p>
+                          </div>
+                        </div>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSelectedUser(null)}>
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <>
+                        <Input
+                          value={participantSearch}
+                          onChange={(e) => setParticipantSearch(e.target.value)}
+                          placeholder="Search by username..."
+                          className="bg-muted/50 text-base sm:text-sm h-12 sm:h-10"
+                          autoComplete="off"
+                        />
+                        {isSearchingUsers ? (
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground px-1 py-1.5">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <span>Searching...</span>
+                          </div>
+                        ) : (
+                          userSearchResults.length > 0 && (
+                            <div className="rounded-lg border border-border divide-y max-h-[200px] overflow-y-auto">
+                              {userSearchResults.map((user) => (
+                                <button
+                                  key={user.id}
+                                  onClick={() => {
+                                    setSelectedUser(user)
+                                    setParticipantSearch("")
+                                  }}
+                                  className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted/70 transition-colors"
+                                >
+                                  <Avatar className="h-8 w-8">
+                                    <AvatarImage src={user.avatar || undefined} />
+                                    <AvatarFallback>{user.name?.charAt(0).toUpperCase()}</AvatarFallback>
+                                  </Avatar>
+                                  <div>
+                                    <p className="text-base sm:text-sm font-medium">{user.name}</p>
+                                    <p className="text-sm sm:text-xs text-muted-foreground">@{user.username || "unknown"}</p>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          )
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+                <Button
+                  onClick={handleCreate}
                   disabled={createMutation.isPending}
                   className="h-12 text-base font-medium"
                 >
@@ -313,12 +309,74 @@ export default function AddNew() {
       <DialogContent className="sm:max-w-3xl">
         <DialogTitle>Create new</DialogTitle>
         {content}
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-4 flex justify-end items-center gap-2">
           {chatType === 'room' && (
             <Input value={roomName} onChange={(e) => setRoomName(e.target.value)} placeholder="Room name" />
           )}
+          {chatType === "single" && (
+            <div className="w-full ">
+              
+              {selectedUser ? (
+                <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-9 w-9">
+                      <AvatarImage src={selectedUser.avatar || undefined} />
+                      <AvatarFallback>{selectedUser.name?.charAt(0).toUpperCase()}</AvatarFallback>
+                    </Avatar>
+                    <div className="space-y-0.5">
+                      <p className="text-base sm:text-sm font-medium">{selectedUser.name}</p>
+                      <p className="text-sm sm:text-xs text-muted-foreground">@{selectedUser.username || "unknown"}</p>
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSelectedUser(null)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <Input
+                    value={participantSearch}
+                    onChange={(e) => setParticipantSearch(e.target.value)}
+                    placeholder="Search by username..."
+                    className="bg-muted/50 text-base sm:text-sm h-12 sm:h-10"
+                    autoComplete="off"
+                  />
+                  {isSearchingUsers ? (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground px-1 py-1.5">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Searching...</span>
+                    </div>
+                  ) : (
+                    userSearchResults.length > 0 && (
+                      <div className="rounded-lg border border-border divide-y max-h-[200px] overflow-y-auto">
+                        {userSearchResults.map((user) => (
+                          <button
+                            key={user.id}
+                            onClick={() => {
+                              setSelectedUser(user)
+                              setParticipantSearch("")
+                            }}
+                            className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted/70 transition-colors"
+                          >
+                            <Avatar className="h-8 w-8">
+                              <AvatarImage src={user.avatar || undefined} />
+                              <AvatarFallback>{user.name?.charAt(0).toUpperCase()}</AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <p className="text-base sm:text-sm font-medium">{user.name}</p>
+                              <p className="text-sm sm:text-xs text-muted-foreground">@{user.username || "unknown"}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )
+                  )}
+                </>
+              )}
+            </div>
+          )}
           <Button onClick={handleCreate} disabled={createMutation.isPending}>
-             {createMutation.isPending ? "Creating..." : "Create"}
+            {createMutation.isPending ? "Creating..." : "Create"}
           </Button>
         </div>
       </DialogContent>

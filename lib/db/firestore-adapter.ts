@@ -296,7 +296,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
     return messages.reverse()
   }
 
-  async createMessage(data: { content: string; senderId: string; chatId?: string | null; groupId?: string | null; replyToId?: string | null }): Promise<MessageWithDetails> {
+  async createMessage(data: { content: string; senderId: string; chatId?: string | null; groupId?: string | null; replyToId?: string | null; imageUrl?: string | null }): Promise<MessageWithDetails> {
     const ref = doc(collection(getDb(), 'messages'))
     let encryptedContent = data.content
     
@@ -320,6 +320,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
       chatId: data.chatId || null,
       groupId: data.groupId || null,
       replyToId: data.replyToId || null,
+      imageUrl: data.imageUrl || null,
       deletedForEveryone: false,
       deletedAt: null,
       createdAt: now,
@@ -338,6 +339,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
       id: ref.id,
       ...data,
       content: data.content, // Return plain text for UI
+      imageUrl: data.imageUrl || null,
       deletedForEveryone: false,
       deletedAt: null,
       createdAt: now.toDate(),
@@ -647,6 +649,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
         chatId: m.chatId,
         groupId: m.groupId,
         replyToId: m.replyToId,
+        imageUrl: m.imageUrl || null,
         deletedForEveryone: m.deletedForEveryone || false,
         deletedAt: m.deletedAt ? this.toDate(m.deletedAt) : null,
         createdAt: this.toDate(m.createdAt),

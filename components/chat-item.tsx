@@ -92,7 +92,7 @@ export default function ChatItem({ id, name, message, unreadCount, imageUrl, isL
   // Definim elementele meniului direct în componentă pentru a avea acces la state
   const contextMenuItems = [
     {
-      icon: <Pin size={17} />,
+      icon: <Pin size={17} className="!text-foreground"/>,
       label: "Pin Chat",
       onClick: () => {
         console.log("Pin chat clicked")
@@ -100,7 +100,7 @@ export default function ChatItem({ id, name, message, unreadCount, imageUrl, isL
       },
     },
     {
-      icon: <CheckCheck size={17} />,
+      icon: <CheckCheck size={17} className="!text-foreground"/>,
       label: "Mark as Read",
       onClick: () => {
         console.log("Mark as read clicked")
@@ -267,7 +267,7 @@ export default function ChatItem({ id, name, message, unreadCount, imageUrl, isL
 
   return (
     <>
-      <div className={cn("flex w-full max-w-xl flex-col gap-0", !isLast && "border-b border-border/50")}>
+      <div className="flex w-full max-w-xl flex-col gap-0">
         {isMobile ? (
           <>
             <Drawer open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
@@ -286,9 +286,9 @@ export default function ChatItem({ id, name, message, unreadCount, imageUrl, isL
                     )}
                     onClick={handleClick}
                   >
-                    <div className="flex items-center w-full gap-2 sm:gap-3 min-w-0">
+                    <div className="flex items-center w-full gap-3 sm:gap-4 min-w-0">
                       <ItemMedia className="flex-shrink-0">
-                        <Avatar className="h-10 w-10">
+                        <Avatar className="h-11 w-11">
                           <AvatarImage src={imageUrl} />
                           <AvatarFallback className="text-xs sm:text-sm">{name.charAt(0).toUpperCase()}</AvatarFallback>
                         </Avatar>
@@ -387,14 +387,14 @@ export default function ChatItem({ id, name, message, unreadCount, imageUrl, isL
       {/* MODALUL DE CONFIRMARE */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Delete Chat</DialogTitle>
-            <DialogDescription>
+          <DialogHeader className="flex flex-col justify-start sm:justify-start">
+            <DialogTitle className="text-start">Delete Chat</DialogTitle>
+            <DialogDescription className="text-start">
               Are you sure you want to delete this chat with <strong className="text-primary">{name}</strong>? <br/> 
               This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-1">
+          <DialogFooter className="gap-2 sm:gap-1 flex flex-col sm:flex-row">
             <Button 
               variant="ghost" 
               onClick={() => setIsDeleteDialogOpen(false)}
