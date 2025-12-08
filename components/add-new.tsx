@@ -46,7 +46,7 @@ export default function AddNew() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedSearch(participantSearch.trim())
+      setDebouncedSearch(participantSearch.toLowerCase().trim())
     }, 300)
     return () => clearTimeout(timer)
   }, [participantSearch])
@@ -242,7 +242,7 @@ export default function AddNew() {
                         </Button>
                       </div>
                     ) : (
-                      <>
+                      <div className="flex flex-col-reverse">
                         <Input
                           value={participantSearch}
                           onChange={(e) => setParticipantSearch(e.target.value)}
@@ -280,7 +280,7 @@ export default function AddNew() {
                             </div>
                           )
                         )}
-                      </>
+                      </div>
                     )}
                   </div>
                 )}
@@ -333,7 +333,7 @@ export default function AddNew() {
                   </Button>
                 </div>
               ) : (
-                <>
+                <div className="flex flex-col-reverse">
                   <Input
                     value={participantSearch}
                     onChange={(e) => setParticipantSearch(e.target.value)}
@@ -371,7 +371,7 @@ export default function AddNew() {
                       </div>
                     )
                   )}
-                </>
+                </div>
               )}
             </div>
           )}

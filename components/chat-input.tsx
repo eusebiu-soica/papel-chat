@@ -133,11 +133,8 @@ export function ChatInput({
       textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`
     }, 0)
 
-    // Închide Picker-ul doar pe mobil (Drawer) după selecție
-    if (isMobile) {
-      setEmojiPickerOpen(false)
-    }
-    // Pe Desktop (Popover), NU închidem, permițând selecția multiplă.
+    // Don't close picker - let user select multiple emojis
+    // Picker closes only on outside click
   }
 
   // Clasa de bază comună pentru butoane
@@ -209,7 +206,7 @@ export function ChatInput({
                   <Smile className="h-4 w-4" />
                 </Button>
               </DrawerTrigger>
-              <DrawerContent className="h-[400px]">
+              <DrawerContent className="h-auto">
                 <DrawerHeader>
                   <DrawerTitle>Select Emoji</DrawerTitle>
                 </DrawerHeader>

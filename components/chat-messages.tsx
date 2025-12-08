@@ -1,8 +1,9 @@
 "use client"
 
-import { useEffect, useRef, useState, useCallback } from "react"
+import { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import { ChatBubble } from "./chat-bubble"
 import { cn } from "@/lib/utils"
+import { Virtuoso, VirtuosoHandle } from "react-virtuoso"
 
 export interface Message {
   id: string
@@ -176,15 +177,8 @@ export function ChatMessages({
     }
   }, []) // Only on mount
 
-  const visibleMessages = messages.filter(msg => !msg.deletedForEveryone)
-
-  if (visibleMessages.length === 0) {
-    return (
-      <div className={cn("h-full w-full flex items-center justify-center px-4 py-6", className)}>
-        <div className="text-muted-foreground text-sm">No messages yet. Start the conversation!</div>
-      </div>
-    )
-  }
+  const virtuosoRef = useRef<VirtuosoHandle>(null)
+  const visibleMessages = useMemo(() => messages.filter(msg => !msg.deletedForEveryone), [messages])
 
   const toDate = (ts: string) => {
     try {
@@ -195,56 +189,147 @@ export function ChatMessages({
     }
   }
 
+  // Prepare messages with separators for virtualization
+  const messagesWithSeparators = useMemo(() => {
+    const result: Array<{ type: 'message' | 'separator'; data: any }> = []
+    
+    visibleMessages.forEach((message, idx) => {
+      const msgDate = toDate(message.timestamp)
+      const prev = visibleMessages[idx - 1]
+      const prevDate = prev ? toDate(prev.timestamp) : null
+      const showSeparator = !prevDate || msgDate.toDateString() !== prevDate.toDateString()
+
+      if (showSeparator) {
+        result.push({
+          type: 'separator',
+          data: { date: msgDate }
+        })
+      }
+      
+      result.push({
+        type: 'message',
+        data: message
+      })
+    })
+    
+    return result
+  }, [visibleMessages])
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    if (wasAtBottomRef.current && !isUserScrollingRef.current && visibleMessages.length > prevMessagesLengthRef.current) {
+      setTimeout(() => {
+        virtuosoRef.current?.scrollToIndex({
+          index: messagesWithSeparators.length - 1,
+          behavior: 'smooth',
+          align: 'end'
+        })
+      }, 50)
+    }
+    prevMessagesLengthRef.current = visibleMessages.length
+  }, [visibleMessages.length, messagesWithSeparators.length])
+
+  // Initial scroll to bottom
+  useEffect(() => {
+    if (messagesWithSeparators.length > 0) {
+      setTimeout(() => {
+        virtuosoRef.current?.scrollToIndex({
+          index: messagesWithSeparators.length - 1,
+          behavior: 'auto',
+          align: 'end'
+        })
+      }, 100)
+    }
+  }, []) // Only on mount
+
+  if (visibleMessages.length === 0) {
+    return (
+      <div className={cn("h-full w-full flex items-center justify-center px-4 py-6", className)}>
+        <div className="text-muted-foreground text-sm">No messages yet. Start the conversation!</div>
+      </div>
+    )
+  }
+
   return (
     <div 
       ref={containerRef} 
       className={cn(
-        "h-full w-full relative overflow-y-auto",
+        "h-full w-full relative",
         "bg-background",
         className
       )}
     >
-      <div className="flex flex-col gap-0.5 px-2 sm:px-3 md:px-4 py-3 sm:py-4">
-        {/* Load more indicator */}
-        {isLoadingMore && (
-          <div ref={messagesStartRef} className="flex items-center justify-center py-2">
-            <div className="text-xs text-muted-foreground">Loading older messages...</div>
-          </div>
-        )}
-        
-        {visibleMessages.map((message, idx) => {
-            const msgDate = toDate(message.timestamp)
-            const prev = visibleMessages[idx - 1]
-            const prevDate = prev ? toDate(prev.timestamp) : null
-            const showSeparator = !prevDate || msgDate.toDateString() !== prevDate.toDateString()
-
+      <Virtuoso
+        ref={virtuosoRef}
+        style={{ height: '100%', width: '100%' }}
+        data={messagesWithSeparators}
+        initialTopMostItemIndex={messagesWithSeparators.length - 1}
+        followOutput="auto"
+        increaseViewportBy={200}
+        overscan={5}
+        atBottomStateChange={(atBottom) => {
+          wasAtBottomRef.current = atBottom
+        }}
+        onScroll={(e) => {
+          const target = e.currentTarget
+          const { scrollTop, scrollHeight, clientHeight } = target
+          
+          // Check if scrolled to top and load more messages
+          if (scrollTop < 100 && hasMore && onLoadMore && !isLoadingMoreRef.current) {
+            isLoadingMoreRef.current = true
+            prevScrollHeightRef.current = scrollHeight
+            onLoadMore()
+            setTimeout(() => {
+              isLoadingMoreRef.current = false
+            }, 1000)
+          }
+          
+          // Mark as user scrolling
+          isUserScrollingRef.current = true
+          if (scrollTimeoutRef.current) {
+            clearTimeout(scrollTimeoutRef.current)
+          }
+          scrollTimeoutRef.current = setTimeout(() => {
+            isUserScrollingRef.current = false
+          }, 150)
+        }}
+        itemContent={(index, item) => {
+          if (item.type === 'separator') {
             return (
-              <div key={message.id}>
-                {showSeparator && (
-                  <div className="flex items-center justify-center my-3">
-                    <div className="px-3 py-1 rounded-full text-xs bg-muted/80 text-muted-foreground backdrop-blur-sm">
-                      {formatDateLabel(msgDate)}
-                    </div>
-                  </div>
-                )}
-
-                <ChatBubble
-                  message={message}
-                  isOwn={message.sender.id === currentUserId}
-                  isGroupChat={isGroupChat}
-                  currentUserId={currentUserId}
-                  chatId={chatId}
-                  groupId={groupId}
-                  onReply={onReply}
-                  onReact={onReact}
-                  onDelete={onDelete}
-                />
+              <div className="flex items-center justify-center my-3 px-2 sm:px-3 md:px-4">
+                <div className="px-3 py-1 rounded-full text-xs bg-muted/80 text-muted-foreground backdrop-blur-sm">
+                  {formatDateLabel(item.data.date)}
+                </div>
               </div>
             )
-          })}
-
-        <div ref={messagesEndRef} className="h-1" />
-      </div>
+          }
+          
+          const message = item.data
+          return (
+            <div className="px-2 sm:px-3 md:px-4 py-0.5">
+              <ChatBubble
+                message={message}
+                isOwn={message.sender.id === currentUserId}
+                isGroupChat={isGroupChat}
+                currentUserId={currentUserId}
+                chatId={chatId}
+                groupId={groupId}
+                onReply={onReply}
+                onReact={onReact}
+                onDelete={onDelete}
+              />
+            </div>
+          )
+        }}
+        components={{
+          Header: () => isLoadingMore ? (
+            <div className="flex items-center justify-center py-2">
+              <div className="text-xs text-muted-foreground">Loading older messages...</div>
+            </div>
+          ) : null,
+          Footer: () => <div className="h-1" />
+        }}
+      />
     </div>
   )
 }
