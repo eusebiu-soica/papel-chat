@@ -1,7 +1,10 @@
 // Firestore adapter implementation
 import { DatabaseAdapter, User, Chat, Message, MessageReaction, Group, GroupMember, Room, BlockedUser, ChatWithDetails, MessageWithDetails, GroupWithDetails } from "./adapter"
 import { 
-  getFirestore, 
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   collection, 
   doc, 
   getDoc, 
@@ -36,7 +39,27 @@ function getDb() {
     throw new Error("Firebase is not configured. Please add NEXT_PUBLIC_FIREBASE_* environment variables.")
   }
   if (!db) {
-    db = getFirestore(app)
+    // Enable offline persistence with multi-tab support
+    try {
+      // Only initialize with persistence on client side
+      if (typeof window !== 'undefined') {
+        db = initializeFirestore(app, {
+          localCache: persistentLocalCache({
+            tabManager: persistentMultipleTabManager()
+          })
+        })
+      } else {
+        // Server-side: use regular getFirestore
+        db = getFirestore(app)
+      }
+    } catch (e: any) {
+      // If already initialized, fallback to getFirestore
+      if (e.code === 'failed-precondition') {
+        db = getFirestore(app)
+      } else {
+        throw e
+      }
+    }
   }
   return db
 }

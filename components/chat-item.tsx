@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useRef } from "react" // Import useState and useRef
+import { useState, useRef, useCallback } from "react" // Import useState, useRef, and useCallback
 import { BellOff, CheckCheck, Pin, Trash, Loader2 } from "lucide-react" // Import Loader2
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item"
@@ -37,6 +37,8 @@ import { cn } from "@/lib/utils"
 import { db } from "@/lib/db/provider"
 import { useChat } from "@/lib/context/chat-context"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { useQueryClient } from "@tanstack/react-query"
+import { FirestoreAdapter } from "@/lib/db/firestore-adapter"
 
 interface ChatItemProps {
   id: string
@@ -47,12 +49,15 @@ interface ChatItemProps {
   isLast?: boolean
 }
 
+const adapter = new FirestoreAdapter()
+
 export default function ChatItem({ id, name, message, unreadCount, imageUrl, isLast }: ChatItemProps) {
   const pathname = usePathname()
   const router = useRouter()
   const { currentUserId } = useChat()
   const isActive = !!pathname && pathname.includes(`/chat/${id}`)
   const isMobile = useIsMobile()
+  const queryClient = useQueryClient()
 
   // State pentru modalul de ștergere
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
@@ -201,6 +206,28 @@ export default function ChatItem({ id, name, message, unreadCount, imageUrl, isL
     }
   }
 
+  // Prefetch messages on hover for faster loading
+  const handleMouseEnter = useCallback(() => {
+    if (isActive) return // Don't prefetch if already active
+    
+    const identifier = `chat:${id}`
+    queryClient.prefetchQuery({
+      queryKey: ["messages", identifier, "initial"],
+      queryFn: async () => {
+        const messages = await adapter.getMessages({
+          chatId: id,
+          limit: 20
+        })
+        return messages.sort((a, b) => {
+          const timeA = a.createdAt instanceof Date ? a.createdAt.getTime() : new Date(a.createdAt).getTime()
+          const timeB = b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(b.createdAt).getTime()
+          return timeA - timeB
+        })
+      },
+      staleTime: 1000 * 30, // 30 seconds
+    })
+  }, [id, isActive, queryClient])
+
   const menuContent = (
     <>
       {muteDuration === "selecting" ? (
@@ -285,6 +312,7 @@ export default function ChatItem({ id, name, message, unreadCount, imageUrl, isL
                       isActive && "bg-primary/30 border-l-2 hover:bg-primary/30 border-primary"
                     )}
                     onClick={handleClick}
+                    onMouseEnter={handleMouseEnter}
                   >
                     <div className="flex items-center w-full gap-3 sm:gap-4 min-w-0">
                       <ItemMedia className="flex-shrink-0">
@@ -326,6 +354,7 @@ export default function ChatItem({ id, name, message, unreadCount, imageUrl, isL
                   isActive && "bg-primary/30 border-l-2 hover:bg-primary/30 border-primary"
                 )}
                 onClick={handleClick}
+                onMouseEnter={handleMouseEnter}
               >
                 <div className="flex items-center w-full gap-2 sm:gap-3 min-w-0">
                   <ItemMedia className="flex-shrink-0">

@@ -6,6 +6,15 @@ const nextConfig: NextConfig = {
     // This keeps the build working on Vercel while allowing local linting during development.
     ignoreDuringBuilds: true,
   },
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'firebasestorage.googleapis.com',
+        pathname: '/v0/b/**',
+      },
+    ],
+  },
 };
 
 export default nextConfig;
