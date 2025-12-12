@@ -109,25 +109,16 @@ export function ChatInput({
   }, [recordingStatus])
 
   useEffect(() => {
-    if (selectedFile && recordingStatus !== "recording") {
-      if (autoSendVoiceRef.current) {
-        onSendMessage("", selectedFile)
-        setSelectedFile(null)
-        clearBlobUrl()
-        setRecordingTime(0)
-        autoSendVoiceRef.current = false
-      }
+    if (selectedFile && autoSendVoiceRef.current && recordingStatus !== "recording") {
+      onSendMessage("", selectedFile)
+      setSelectedFile(null)
+      clearBlobUrl()
+      setRecordingTime(0)
+      autoSendVoiceRef.current = false
     }
-  }, [selectedFile])
+  }, [selectedFile, recordingStatus, onSendMessage])
 
 
-  const resetRecording = () => {
-    isCancellingRef.current = true;
-    clearBlobUrl();
-    setSelectedFile(null);
-    setRecordingTime(0);
-    autoSendVoiceRef.current = false;
-  };
   
 
   const formatRecordingTime = (seconds: number) => {
@@ -145,27 +136,17 @@ export function ChatInput({
     }
   }
 
-  const handleStopRecording = async () => {
+  const handleStopRecording = () => {
     if (recordingStatus === 'recording') {
       stopRecording()
-      resetRecording()
-      // Wait a bit for the blob to be processed
-      await new Promise(resolve => setTimeout(resolve, 300))
     }
   }
 
-  const handleSendVoiceMessage = async () => {
+  const handleSendVoiceMessage = () => {
     if (recordingStatus === 'recording') {
       autoSendVoiceRef.current = true
-      await handleStopRecording()
-      // Wait for file to be set in onStop callback
-      await new Promise(resolve => setTimeout(resolve, 500))
-      if (selectedFile) {
-        onSendMessage("", selectedFile)
-        setSelectedFile(null)
-        clearBlobUrl()
-        setRecordingTime(0)
-      }
+      handleStopRecording()
+      // The onStop callback will set selectedFile, then useEffect will send it
     } else if (selectedFile) {
       // If already stopped, just send
       onSendMessage("", selectedFile)
@@ -176,12 +157,14 @@ export function ChatInput({
   }
 
   const handleCancelRecording = () => {
+    isCancellingRef.current = true
     if (recordingStatus === 'recording') {
       stopRecording()
     }
     clearBlobUrl()
     setRecordingTime(0)
     setSelectedFile(null)
+    autoSendVoiceRef.current = false
   }
 
   const handleSubmit = () => {
@@ -341,8 +324,8 @@ export function ChatInput({
         </div>
       )}
 
-      {/* File preview */}
-      {selectedFile && !recordingStatus && (
+      {/* File preview - show for images and files, but not for voice messages */}
+      {selectedFile && recordingStatus !== 'recording' && !selectedFile.fileName.includes('voice-') && (
         <div className="relative px-4 py-2 border-b border-border bg-muted/30">
           <div className="relative inline-block max-w-[200px] rounded-lg overflow-hidden">
             {selectedFile.fileType.startsWith('image/') ? (
