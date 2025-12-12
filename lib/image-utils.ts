@@ -111,3 +111,67 @@ export function createDataUriFromBase64(base64: string, mimeType: string = 'imag
   return `data:${mimeType};base64,${base64}`
 }
 
+/**
+ * Converts any file to base64 data URI
+ * Images are compressed, other files are converted as-is
+ * @param file - The file to convert
+ * @returns Promise<{ dataUri: string; width?: number; height?: number }> - Base64 data URI and optional dimensions for images
+ */
+export async function fileToBase64(file: File): Promise<{ dataUri: string; width?: number; height?: number }> {
+  // For images, use compression
+  if (file.type.startsWith('image/')) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      
+      reader.onload = (e) => {
+        const img = new Image()
+        
+        img.onload = () => {
+          const width = img.width
+          const height = img.height
+          
+          // Use compression for images
+          compressImageToBase64(file)
+            .then(dataUri => resolve({ dataUri, width, height }))
+            .catch(reject)
+        }
+        
+        img.onerror = () => {
+          reject(new Error('Failed to load image'))
+        }
+        
+        if (e.target?.result) {
+          img.src = e.target.result as string
+        } else {
+          reject(new Error('Failed to read file'))
+        }
+      }
+      
+      reader.onerror = () => {
+        reject(new Error('Failed to read file'))
+      }
+      
+      reader.readAsDataURL(file)
+    })
+  }
+  
+  // For non-image files, convert directly to base64
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    
+    reader.onload = (e) => {
+      if (e.target?.result) {
+        resolve({ dataUri: e.target.result as string })
+      } else {
+        reject(new Error('Failed to read file'))
+      }
+    }
+    
+    reader.onerror = () => {
+      reject(new Error('Failed to read file'))
+    }
+    
+    reader.readAsDataURL(file)
+  })
+}
+

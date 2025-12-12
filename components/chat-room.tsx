@@ -5,6 +5,17 @@ import { ChatInput } from "./chat-input"
 import { ChatMessages, type Message } from "./chat-messages"
 import { toast } from 'sonner'
 import { useIsMobile } from "@/hooks/use-mobile"
+import { useState } from "react"
+import { cn } from "@/lib/utils"
+
+interface FileData {
+  dataUri: string
+  fileName: string
+  fileType: string
+  fileSize: number
+  width?: number
+  height?: number
+}
 
 interface ChatRoomProps {
   id: string
@@ -13,7 +24,7 @@ interface ChatRoomProps {
   messages: Message[]
   currentUserId: string
   isGroupChat?: boolean
-  onSendMessage: (message: string, replyToId?: string, imageUrl?: string | null) => void
+  onSendMessage: (message: string, replyToId?: string, fileData?: FileData | null) => void
   replyingTo?: { id: string; content: string; senderName: string } | null
   onCancelReply?: () => void
   onReply?: (messageId: string) => void
@@ -45,8 +56,8 @@ export function ChatRoom({
 }: ChatRoomProps) {
   const isMobile = useIsMobile()
   
-  const handleSend = (content: string, imageUrl?: string | null) => {
-    onSendMessage(content, replyingTo?.id, imageUrl)
+  const handleSend = (content: string, fileData?: FileData | null) => {
+    onSendMessage(content, replyingTo?.id, fileData)
     onCancelReply?.()
   }
 
@@ -121,7 +132,7 @@ export function ChatRoom({
         />
       </div>
 
-      <div className="flex-shrink-0 border-t border-border sticky bottom-0 z-30 bg-background">
+      <div className="flex-shrink-0 sticky bottom-0 z-30 bg-background">
         <ChatInput 
           onSendMessage={handleSend}
           replyingTo={replyingTo}

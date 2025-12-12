@@ -133,10 +133,31 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         }
       }
       
+      // Parse file metadata if present
+      let fileData = null
+      if ((msg as any).fileMetadata) {
+        try {
+          const metadata = JSON.parse((msg as any).fileMetadata)
+          if (msg.imageUrl) {
+            fileData = {
+              dataUri: msg.imageUrl,
+              fileName: metadata.fileName,
+              fileType: metadata.fileType,
+              fileSize: metadata.fileSize,
+              width: metadata.width,
+              height: metadata.height
+            }
+          }
+        } catch (e) {
+          console.error('Error parsing file metadata:', e)
+        }
+      }
+      
       messageMap.set(msg.id, {
         id: msg.id,
         content,
         imageUrl: msg.imageUrl || null,
+        fileData: fileData,
         timestamp: safeToISOString(msg.createdAt),
         sender: {
           id: senderId,

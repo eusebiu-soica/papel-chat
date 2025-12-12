@@ -48,6 +48,7 @@ export function EmojiPicker({ onEmojiSelect, className }: EmojiPickerProps) {
         previewConfig={{ showPreview: false }}
         autoFocusSearch={false}
         lazyLoadEmojis={true}
+        className='!rounded-none'
       />
     </div>
   )
