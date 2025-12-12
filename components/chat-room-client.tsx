@@ -8,6 +8,14 @@ import { toast } from 'sonner'
 import { FirestoreAdapter } from "@/lib/db/firestore-adapter"
 import type { ChatWithDetails, MessageWithDetails } from "@/lib/db/adapter"
 
+interface FileData {
+  dataUri: string
+  fileName: string
+  fileType: string
+  fileSize: number
+  width?: number
+  height?: number
+}
 
 const adapter = new FirestoreAdapter();
 
@@ -36,16 +44,20 @@ export default function ChatRoomClient({
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const queryClient = useQueryClient()
 
-  const handleSendMessage = useCallback(async (messageContent: string, replyToId?: string, imageUrl?: string | null) => {
+  const handleSendMessage = useCallback(async (messageContent: string, replyToId?: string, fileData?: FileData | null) => {
     // 1. Optimistic Update (Instant) - Add to messages list immediately
     const tempId = `temp-${Date.now()}-${Math.random().toString(36).substring(7)}`;
     const now = new Date();
     const identifier = isGroupChat ? `group:${id}` : `chat:${id}`
     
+    // For backward compatibility, convert fileData to imageUrl if it's an image
+    const imageUrl = fileData?.fileType.startsWith('image/') ? fileData.dataUri : null
+    
     const optimisticMsg: Message = {
       id: tempId,
       content: messageContent,
       imageUrl: imageUrl || null,
+      fileData: fileData || null,
       timestamp: now.toISOString(),
       sender: {
         id: currentUserId,
@@ -105,24 +117,45 @@ export default function ChatRoomClient({
 
     try {
       // Send to Firebase
+      // Store file data: imageUrl contains the data URI, fileMetadata contains JSON metadata
+      const fileDataUri = fileData?.dataUri || imageUrl || null
+      const fileMetadataJson = fileData ? JSON.stringify({
+        fileName: fileData.fileName,
+        fileType: fileData.fileType,
+        fileSize: fileData.fileSize,
+        width: fileData.width,
+        height: fileData.height
+      }) : null
+      
       const createdMessage = await adapter.createMessage({
         content: messageContent,
         senderId: currentUserId,
         chatId: isGroupChat ? undefined : id,
         groupId: isGroupChat ? id : undefined,
         replyToId: replyToId,
-        imageUrl: imageUrl || null
+        imageUrl: fileDataUri,
+        fileMetadata: fileMetadataJson
       });
+      
+      // Add fileData to the created message for display
+      if (fileData) {
+        (createdMessage as any).fileData = fileData
+      }
 
       // Update the temp message with real message data and mark as sent
       queryClient.setQueryData<MessageWithDetails[]>(['messages', identifier, 'initial'], (old: any[] = []) => {
         return old.map(msg => {
           if (msg.id === tempId) {
             // Replace temp message with real one, mark as sent
-            return {
+            const updatedMsg = {
               ...createdMessage,
               status: 'sent'
             } as any
+            // Preserve fileData if it was set optimistically
+            if (fileData) {
+              updatedMsg.fileData = fileData
+            }
+            return updatedMsg
           }
           return msg
         })

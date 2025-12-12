@@ -26,6 +26,7 @@ export interface Message {
   groupId?: string | null
   replyToId?: string | null
   imageUrl?: string | null
+  fileMetadata?: string | null // JSON string with file metadata (encrypted)
   deletedForEveryone: boolean
   deletedAt?: Date | null
   createdAt: Date
@@ -123,6 +124,7 @@ export interface DatabaseAdapter {
     groupId?: string | null
     replyToId?: string | null
     imageUrl?: string | null
+    fileMetadata?: string | null
   }): Promise<MessageWithDetails>
   updateMessage(id: string, data: Partial<Message>): Promise<Message>
   deleteMessage(id: string): Promise<void>

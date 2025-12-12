@@ -322,7 +322,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
     return messages.reverse()
   }
 
-  async createMessage(data: { content: string; senderId: string; chatId?: string | null; groupId?: string | null; replyToId?: string | null; imageUrl?: string | null }): Promise<MessageWithDetails> {
+  async createMessage(data: { content: string; senderId: string; chatId?: string | null; groupId?: string | null; replyToId?: string | null; imageUrl?: string | null; fileMetadata?: string | null }): Promise<MessageWithDetails> {
     const ref = doc(collection(getDb(), 'messages'))
     let encryptedContent = data.content
     let encryptedImageUrl: string | null = null
@@ -355,6 +355,17 @@ export class FirestoreAdapter implements DatabaseAdapter {
       encryptedImageUrl = data.imageUrl || null
     }
     
+    // Encrypt file metadata if provided
+    let encryptedFileMetadata: string | null = null
+    if (data.fileMetadata) {
+      try {
+        encryptedFileMetadata = encrypt(data.fileMetadata, data.chatId || null, data.groupId || null)
+      } catch (e) {
+        console.error('Error encrypting file metadata:', e)
+        encryptedFileMetadata = data.fileMetadata
+      }
+    }
+    
     const now = Timestamp.now()
     const msgData = {
       content: encryptedContent,
@@ -363,6 +374,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
       groupId: data.groupId || null,
       replyToId: data.replyToId || null,
       imageUrl: encryptedImageUrl,
+      fileMetadata: encryptedFileMetadata,
       deletedForEveryone: false,
       deletedAt: null,
       createdAt: now,
@@ -684,6 +696,32 @@ export class FirestoreAdapter implements DatabaseAdapter {
         }
       }
 
+      // Decrypt file metadata first (needed for mime type)
+      let fileMetadata: string | null = m.fileMetadata || null
+      let metadataObj: any = null
+      if (fileMetadata && isEncrypted(fileMetadata)) {
+        try {
+          const decryptedMetadata = decrypt(fileMetadata, msgChatId, msgGroupId)
+          if (decryptedMetadata && decryptedMetadata !== fileMetadata && !decryptedMetadata.startsWith('ENC:')) {
+            fileMetadata = decryptedMetadata
+            try {
+              metadataObj = JSON.parse(decryptedMetadata)
+            } catch (e) {
+              // Not JSON, ignore
+            }
+          }
+        } catch (e) {
+          console.error('Error decrypting file metadata:', e, 'messageId:', docSnap.id)
+          fileMetadata = null
+        }
+      } else if (fileMetadata) {
+        try {
+          metadataObj = JSON.parse(fileMetadata)
+        } catch (e) {
+          // Not JSON, ignore
+        }
+      }
+
       // 🖼️ NEW: Decrypt image data if it's encrypted (base64 stored in Firestore)
       // Backward compatibility: if it's a regular URL (from Storage), keep it as is
       let imageUrl: string | null = m.imageUrl || null
@@ -693,7 +731,9 @@ export class FirestoreAdapter implements DatabaseAdapter {
           const decryptedBase64 = decrypt(imageUrl, msgChatId, msgGroupId)
           // Convert back to data URI for display
           if (decryptedBase64 && decryptedBase64 !== imageUrl && !decryptedBase64.startsWith('ENC:')) {
-            imageUrl = createDataUriFromBase64(decryptedBase64, 'image/jpeg')
+            // Use mime type from fileMetadata if available, otherwise default to image/jpeg
+            const mimeType = metadataObj?.fileType || 'image/jpeg'
+            imageUrl = createDataUriFromBase64(decryptedBase64, mimeType)
           }
         } catch (e) {
           console.error('Error decrypting image:', e, 'messageId:', docSnap.id)
@@ -710,6 +750,7 @@ export class FirestoreAdapter implements DatabaseAdapter {
         groupId: m.groupId,
         replyToId: m.replyToId,
         imageUrl,
+        fileMetadata,
         deletedForEveryone: m.deletedForEveryone || false,
         deletedAt: m.deletedAt ? this.toDate(m.deletedAt) : null,
         createdAt: this.toDate(m.createdAt),

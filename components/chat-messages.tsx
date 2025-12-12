@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState, useCallback, useMemo } from "react"
+import { useLayoutEffect, useEffect, useRef, useState, useCallback, useMemo } from "react"
 import { ChatBubble } from "./chat-bubble"
 import { cn } from "@/lib/utils"
 import { Virtuoso, VirtuosoHandle } from "react-virtuoso"
@@ -15,6 +15,14 @@ export interface Message {
     avatar?: string
   }
   imageUrl?: string | null
+  fileData?: {
+    dataUri: string
+    fileName: string
+    fileType: string
+    fileSize: number
+    width?: number
+    height?: number
+  } | null
   replyTo?: {
     id: string
     content: string
@@ -78,106 +86,17 @@ export function ChatMessages({
   hasMore = false,
   isLoadingMore = false
 }: ChatMessagesProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement | null>(null)
-  const messagesStartRef = useRef<HTMLDivElement | null>(null)
-  const isUserScrollingRef = useRef(false)
-  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const wasAtBottomRef = useRef(true)
+  
+  const virtuosoRef = useRef<VirtuosoHandle>(null)
   const prevMessagesLengthRef = useRef(messages.length)
   const prevScrollHeightRef = useRef(0)
   const isLoadingMoreRef = useRef(false)
-
-  // Check if user is near bottom (within 100px)
-  const isNearBottom = useCallback(() => {
-    const el = containerRef.current
-    if (!el) return true
-    const { scrollTop, scrollHeight, clientHeight } = el
-    const distanceFromBottom = scrollHeight - (scrollTop + clientHeight)
-    return distanceFromBottom < 100
-  }, [])
-
-  // Handle scroll events and pagination
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-
-    const handleScroll = () => {
-      wasAtBottomRef.current = isNearBottom()
-      
-      // Check if scrolled to top and load more messages
-      if (el.scrollTop < 100 && hasMore && onLoadMore && !isLoadingMoreRef.current) {
-        isLoadingMoreRef.current = true
-        const currentScrollHeight = el.scrollHeight
-        prevScrollHeightRef.current = currentScrollHeight
-        onLoadMore()
-        // Reset flag after a delay
-        setTimeout(() => {
-          isLoadingMoreRef.current = false
-        }, 1000)
-      }
-      
-      // Clear existing timeout
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current)
-      }
-      
-      // Mark as user scrolling
-      isUserScrollingRef.current = true
-      
-      // Reset after 150ms of no scrolling
-      scrollTimeoutRef.current = setTimeout(() => {
-        isUserScrollingRef.current = false
-      }, 150)
-    }
-
-    el.addEventListener("scroll", handleScroll, { passive: true })
-    return () => {
-      el.removeEventListener("scroll", handleScroll)
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current)
-      }
-    }
-  }, [isNearBottom, hasMore, onLoadMore])
+  const wasAtBottomRef = useRef(true) 
   
-  // Maintain scroll position when loading more messages
-  useEffect(() => {
-    if (isLoadingMore && containerRef.current && prevScrollHeightRef.current > 0) {
-      const el = containerRef.current
-      const newScrollHeight = el.scrollHeight
-      const scrollDiff = newScrollHeight - prevScrollHeightRef.current
-      el.scrollTop = el.scrollTop + scrollDiff
-      prevScrollHeightRef.current = 0
-    }
-  }, [isLoadingMore, messages.length])
+  // Am eliminat scrollTimeoutRef și isUserScrollingRef pentru a simplifica Virtuoso
+  // const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  // const isUserScrollingRef = useRef(false) 
 
-  // Auto-scroll to bottom only if:
-  // 1. User was at bottom before new message
-  // 2. User is not actively scrolling
-  // 3. New messages were added (not just re-render)
-  useEffect(() => {
-    const visibleCount = messages.filter(msg => !msg.deletedForEveryone).length
-    const messagesAdded = visibleCount > prevMessagesLengthRef.current
-    prevMessagesLengthRef.current = visibleCount
-
-    if (messagesAdded && wasAtBottomRef.current && !isUserScrollingRef.current) {
-      // Small delay to ensure DOM is updated
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-      }, 50)
-    }
-  }, [messages])
-
-  // Initial scroll to bottom
-  useEffect(() => {
-    const visibleMessages = messages.filter(msg => !msg.deletedForEveryone)
-    if (visibleMessages.length > 0 && containerRef.current) {
-      const el = containerRef.current
-      el.scrollTop = el.scrollHeight
-    }
-  }, []) // Only on mount
-
-  const virtuosoRef = useRef<VirtuosoHandle>(null)
   const visibleMessages = useMemo(() => messages.filter(msg => !msg.deletedForEveryone), [messages])
 
   const toDate = (ts: string) => {
@@ -189,7 +108,7 @@ export function ChatMessages({
     }
   }
 
-  // Prepare messages with separators for virtualization
+  // Pregătește mesajele cu separatori pentru virtualizare
   const messagesWithSeparators = useMemo(() => {
     const result: Array<{ type: 'message' | 'separator'; data: any }> = []
     
@@ -215,32 +134,22 @@ export function ChatMessages({
     return result
   }, [visibleMessages])
 
-  // Auto-scroll to bottom when new messages arrive
-  useEffect(() => {
-    if (wasAtBottomRef.current && !isUserScrollingRef.current && visibleMessages.length > prevMessagesLengthRef.current) {
-      setTimeout(() => {
-        virtuosoRef.current?.scrollToIndex({
-          index: messagesWithSeparators.length - 1,
-          behavior: 'smooth',
-          align: 'end'
-        })
-      }, 50)
-    }
-    prevMessagesLengthRef.current = visibleMessages.length
-  }, [visibleMessages.length, messagesWithSeparators.length])
 
-  // Initial scroll to bottom
+
+
   useEffect(() => {
-    if (messagesWithSeparators.length > 0) {
-      setTimeout(() => {
+    if (wasAtBottomRef.current) {
+      requestAnimationFrame(() => {
         virtuosoRef.current?.scrollToIndex({
           index: messagesWithSeparators.length - 1,
-          behavior: 'auto',
-          align: 'end'
-        })
-      }, 100)
+          behavior: "auto",
+          align: "end",
+        });
+      });
     }
-  }, []) // Only on mount
+  }, [messagesWithSeparators.length]);
+  
+  
 
   if (visibleMessages.length === 0) {
     return (
@@ -252,7 +161,6 @@ export function ChatMessages({
 
   return (
     <div 
-      ref={containerRef} 
       className={cn(
         "h-full w-full relative",
         "bg-background",
@@ -263,36 +171,37 @@ export function ChatMessages({
         ref={virtuosoRef}
         style={{ height: '100%', width: '100%' }}
         data={messagesWithSeparators}
-        initialTopMostItemIndex={messagesWithSeparators.length - 1}
+        initialTopMostItemIndex={messagesWithSeparators.length > 0 ? messagesWithSeparators.length - 1 : 0}
+        
+        // Logică de auto-follow
         followOutput="auto"
         increaseViewportBy={200}
         overscan={5}
+        
+        // Starea 'la fund' (atBottom)
         atBottomStateChange={(atBottom) => {
-          wasAtBottomRef.current = atBottom
         }}
+        
+        // Gestionarea scroll-ului și a paginării (load more)
         onScroll={(e) => {
-          const target = e.currentTarget
-          const { scrollTop, scrollHeight, clientHeight } = target
-          
-          // Check if scrolled to top and load more messages
-          if (scrollTop < 100 && hasMore && onLoadMore && !isLoadingMoreRef.current) {
-            isLoadingMoreRef.current = true
-            prevScrollHeightRef.current = scrollHeight
-            onLoadMore()
-            setTimeout(() => {
-              isLoadingMoreRef.current = false
-            }, 1000)
+          const el = e.currentTarget;
+          const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        
+          // toleranță 30px
+          if (distanceFromBottom < 30) {
+            wasAtBottomRef.current = true;
+          } else {
+            wasAtBottomRef.current = false;
           }
-          
-          // Mark as user scrolling
-          isUserScrollingRef.current = true
-          if (scrollTimeoutRef.current) {
-            clearTimeout(scrollTimeoutRef.current)
+        
+          if (el.scrollTop < 100 && hasMore && !isLoadingMoreRef.current) {
+            isLoadingMoreRef.current = true;
+            onLoadMore?.();
+            setTimeout(() => (isLoadingMoreRef.current = false), 300);
           }
-          scrollTimeoutRef.current = setTimeout(() => {
-            isUserScrollingRef.current = false
-          }, 150)
         }}
+        
+        
         itemContent={(index, item) => {
           if (item.type === 'separator') {
             return (
@@ -327,7 +236,7 @@ export function ChatMessages({
               <div className="text-xs text-muted-foreground">Loading older messages...</div>
             </div>
           ) : null,
-          Footer: () => <div className="h-1" />
+          Footer: () => null
         }}
       />
     </div>
