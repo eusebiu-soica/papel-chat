@@ -55,7 +55,6 @@ export function ChatRoom({
   isLoadingMore = false,
 }: ChatRoomProps) {
   const isMobile = useIsMobile()
-  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   
   const handleSend = (content: string, fileData?: FileData | null) => {
     onSendMessage(content, replyingTo?.id, fileData)
@@ -139,7 +138,6 @@ export function ChatRoom({
           replyingTo={replyingTo}
           onCancelReply={onCancelReply}
           isLoading={isSendingMessage}
-          onEmojiPickerOpenChange={setEmojiPickerOpen}
         />
       </div>
     </div>
